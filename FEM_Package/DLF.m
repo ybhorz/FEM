@@ -10,13 +10,8 @@ classdef DLF
         EntIdx (1, :); % Indices of mesh entities.
         %% Integrant.
         coef (1, :) Fcn; % Coefficient function.
-        trlOrd (:, :, :) % Order of derivative of test function.
-        tstOrd (:, :, :) % Order of derivative of trial function.
-        % ord(i,j) = k: take k-th derivative of j-th function component with respect to i-th variable.
-        % If ~(ord(i,j) >= 0), j-th function component is set to 0.
-        % If 3rd dimension exists, output function is a staking of results from taking different derivative to input function.
-        % - For scalar input, output becomes column vector.
-        % - For column vector input, output becomes matrix.
+        trlOrd (:, :, :) % Order of derivative of trial function.
+        tstOrd (:, :, :) % Order of derivative of test function.
         iTrl; % Index of trial function.
         iTst; % Index of test function.
         % When `EntDim` = 1, positive/negative `iTrl/iTst` indicates taking function trace from positive/negative connected element of edge.
@@ -56,6 +51,7 @@ classdef DLF
             if ~isempty(options.GInt)
                 DLF.GInt = options.GInt;
             else
+                warning("No GInt specified.");
                 switch EntDim
                     case 2
                         DLF.GInt = GInt("D2T", 1);
@@ -108,11 +104,12 @@ classdef DLF
                     nCol = 2; tstSgn = [1, -1]; tstWgt = [1, -1];
             end
             DLFs(1:nRow, 1:nCol) = DLF(msh, EntDim, coef, trlOrd, tstOrd, "EntIdx", options.EntIdx, "iTrl", options.iTrl, "iTst", options.iTst, "form", options.form, "GInt", options.GInt);
+            baseForm = options.form;
             for iRow = 1:nRow
                 for iCol = 1:nCol
                     DLFs(iRow, iCol).iTrl = DLFs(iRow, iCol).iTrl * trlSgn(iRow);
                     DLFs(iRow, iCol).iTst = DLFs(iRow, iCol).iTst * tstSgn(iCol);
-                    DLFs(iRow, iCol).form = @(varargin) DLFs(iRow, iCol).form(varargin{:}) * trlWgt(iRow) * tstWgt(iCol);
+                    DLFs(iRow, iCol).form = @(varargin) baseForm(varargin{:}) * trlWgt(iRow) * tstWgt(iCol);
                 end
             end
             DLFs = DLFs(:)';

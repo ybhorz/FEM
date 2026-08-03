@@ -1,7 +1,7 @@
 classdef DoF
     % DoF: degree of freedom.
     % Degree of freedom is a functional that samples function on specific mesh entity.
-    % One `DoF` represent a group of DoFs including `nSamp` samplers on each of `nEnt` mesh entities with dimension `EntDim`.
+    % One `DoF` represent a group of degrees of freedom: a series of samplers on a set of mesh entities with given dimension.
     properties
         domn {mustBeMember(domn, ["VOID", "D2", "D2R1"])} = "VOID"; % Domain of function.
         msh Msh; % Mesh.
@@ -16,13 +16,13 @@ classdef DoF
     properties (Abstract)
         nEnt % Number of mesh entities.
         nSamp % Number of samplers
-        nDoF % Number of degree of freedoms.
+        nDoF % Number of degrees of freedom.
         sDoF (1, 2) % Size of DoF group: [nEnt, nSamp].
     end
     methods (Abstract)
         val = eval(DoF, fcn, options)
         % DoF.eval: evaluate DoF on function.
-        % val(i,j): function's DoF value with respect to j-th sampler on i-th mesh entity.
+        % val(i,j): function's DoF value w.r.t. j-th sampler on i-th mesh entity.
     end
     methods
         %% Get functions.

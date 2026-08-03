@@ -65,9 +65,10 @@ classdef Fcn
                 end
             end
         end
-        function fun = getFun(fcn, options)
+        function funH = getFun(fcn, options)
             % Fcn.getFun: get function handle of `fun`.
-            % Default input arguments of function handle are `var`, `parm`, `coef`.
+            % Default input arguments are `var`, `parm`, `coef` (if non-empty).
+            % Multi-point evaluation (vectorized input) is supported for scalar-valued function.
             arguments
                 fcn Fcn;
                 options.parm (1, :) cell = {}; % Manually set parameter.
@@ -103,8 +104,9 @@ classdef Fcn
                     argLst{end + 1} = fcn.coef;
                 end
             end
-            fun = matlabFunction(fcn.fun, "Vars", argLst);
+            funH = matlabFunction(fcn.fun, "Vars", argLst);
             if ~isempty(fcn.var) && all(~ismember(fcn.var, symvar(fcn.fun)))
+                % If `fun` not depend on `var`, broadcast the constant output across all evaluation points.
                 argStr = "";
                 for i = 1:length(argLst)
                     if i > 1
@@ -112,8 +114,8 @@ classdef Fcn
                     end
                     argStr = argStr + "var" + i;
                 end
-                funStr = "@(" + argStr + ") fun(" + argStr + ") .* ones(1, size(var1, 2))";
-                fun = eval(funStr);
+                funStr = "@(" + argStr + ") funH(" + argStr + ") .* ones(1, size(var1, 2))";
+                funH = eval(funStr);
             end
         end
         %% Overload intrinsic operators.
@@ -215,7 +217,7 @@ classdef Fcn
             fcn.fun = (fcn.fun) .^ r;
         end
         function fcn = transpose(fcn)
-            % Fcn.transpose: overload `.'`.
+            % Fcn.transpose: overload .' operator.
             arguments (Input)
                 fcn Fcn;
             end
@@ -230,7 +232,7 @@ classdef Fcn
             arguments (Input)
                 fcn Fcn;
                 dim = []; % Dimension to sum over.
-                % If dim is not specified, sum over all dimensions.
+                % If `dim` is not specified, sum over all dimensions.
             end
             arguments (Output)
                 fcn Fcn;
@@ -323,7 +325,7 @@ classdef Fcn
             funVal = simplify(subs(fcn.fun, fcn.var, val));
         end
         function fcn = comb(fcns, coef)
-            % Fcn.comb: linear combination of functions with coefficients.
+            % Fcn.comb: linear combination of functions w.r.t. given coefficients.
             arguments (Input)
                 fcns (1, :) Fcn;
                 coef (:, 1) {mustBeA(coef, ["double", "sym", "string"])};
@@ -386,15 +388,16 @@ classdef Fcn
             end
         end
         function fcns = dif(fcns, ord)
-            % Fcn.dif: differentiate function.
+            % Fcn.dif: differentiate functions w.r.t. given order.
             arguments (Input)
                 fcns (1, :) Fcn;
                 ord (:, :, :); % ord: order of derivative.
-                % ord(i,j) = k: take k-th derivative of j-th function component with respect to i-th variable.
-                % If ~(ord(i,j) >= 0), j-th function component is set to 0.
-                % If 3rd dimension exists, output function is a staking of results from taking different derivative to input function.
-                % - For scalar input, output becomes column vector.
-                % - For column vector input, output becomes matrix.
+                % Basic case: `ord` is 2D
+                % - ord(i, j) = k: take k-th derivative of j-th function component w.r.t. i-th variable;
+                % - ord(i, j) is not non-negative number: set j-th function component to 0.
+                % Stacking Case: `ord` is 3D
+                % - The 3rd dimension represents a collection of differential operations. Each slice ord(:, :, m) follows the 2D logic above.
+                % - If input function is scalar/vector, the output is vector/matrix.
             end
             arguments (Output)
                 fcns (1, :) Fcn;
@@ -454,7 +457,7 @@ classdef Fcn
             end
         end
         function intVal = int(fcn, domn, idx)
-            % Fcn.int: integrate function over domain.
+            % Fcn.int: integrate function over given domain.
 
             % Valid input arguments and corresponding output:
             % fcn.domn | int.domn | intVal.domn
@@ -474,13 +477,13 @@ classdef Fcn
             % Input arguments:
             arguments (Input)
                 fcn Fcn;
-                domn {mustBeMember(domn, ["D2T", "D2TR", "D2L", "D2LR"])};
-                idx = []; % Index of domain.
-                % Specify index of domain when integrating function over a lower-dimensional mesh entity.
+                domn {mustBeMember(domn, ["D2T", "D2TR", "D2L", "D2LR"])}; % Integrated domain.
+                idx = []; % When integrating a function over a sub-entity of its original domain, specify the index of the sub-entity.
+                % For example, when integrating a function defined on a triangle over its 2-nd edge, set `idx` to 2.
             end
             arguments (Output)
                 intVal Fcn; % Value of integral.
-                % `intVal` is a Fcn object where `fun` is independent of `var`.
+                % `intVal` is a `Fcn` object where `fun` is independent of `var`.
             end
             switch domn
                 case "D2T"
@@ -571,7 +574,7 @@ classdef Fcn
             fcn = fcn.clrCoef;
         end
         function fcn = clrParm(fcn)
-            % Fcn.clrParm: clear parameter by changing domain type.
+            % Fcn.clrParm: clear parameter.
             arguments (Input)
                 fcn Fcn;
             end
@@ -636,7 +639,6 @@ function fcn = mrgFcn(fcn1, fcn2, varargin)
 end
 function prop = mrgProp(prop1, prop2, name)
     % mrgProp: merge properties.
-    % Either prop1 or prop2 is empty, or prop1 is equal to prop2.
     switch name
         case "domn"
             if ismember(MshEnt(prop1), MshEnt(prop2))
@@ -647,6 +649,7 @@ function prop = mrgProp(prop1, prop2, name)
                 error('Fcn.%s are not compatible.', name);
             end
         otherwise
+            % Either prop1 or prop2 is empty, or prop1 is equal to prop2.
             if isempty(prop1) && isempty(prop2)
                 prop = [];
             elseif isempty(prop1)

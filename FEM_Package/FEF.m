@@ -9,8 +9,8 @@ classdef FEF < Fcn
         % ElCoef(:, i): coefficient for i-th element.
     end
     properties (Dependent)
-        sElParm (1, 2); % Size of parameter on element.
-        nElCoef; % Number of coefficients on element.
+        sElParm (1, 2); % Size of parameter on one element.
+        nElCoef; % Number of coefficients on one element.
     end
     methods
         % Constructor.
@@ -45,7 +45,7 @@ classdef FEF < Fcn
         end
         % Public functions.
         function fcn = subt(fcn1, fcn2)
-            % FEF.subt: subtract.
+            % FEF.subt: subtract `fcn2` from `fcn1`.
             arguments (Input)
                 fcn1 FEF;
                 fcn2 FEF;
@@ -53,7 +53,7 @@ classdef FEF < Fcn
             arguments (Output)
                 fcn FEF;
             end
-            assert(isequal(fcn1, fcn2, "domn", "fun", "coef", "elem", "ElParm"));
+            assert(isEqualProp(fcn1, fcn2, "domn", "fun", "coef", "elem", "ElParm"));
             fcn = fcn1;
             fcn.ElCoef = fcn1.ElCoef - fcn2.ElCoef;
         end
@@ -61,7 +61,7 @@ classdef FEF < Fcn
     % Static functions.
     methods (Static)
         function varargout = multi(FESs, DoFVal)
-            % FEF.multi: construct multiple FEF.
+            % FEF.multi: construct multiple `FEF` objects.
             arguments (Input)
                 FESs (1, :) FES; % Finite Element spaces.
                 DoFVal (:, 1); % DoF values of function.
@@ -79,9 +79,8 @@ classdef FEF < Fcn
     end
 end
 % Local functions.
-function flag = isequal(fcn1, fcn2, varargin)
-    % isequal: compare FE functions.
-    % varargin: names of properties to be compared.
+function flag = isEqualProp(fcn1, fcn2, varargin)
+    % isEqualProp: compare FE functions by the named properties.
     flag = true;
     for iProp = 1:length(varargin)
         prop = varargin{iProp};

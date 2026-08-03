@@ -14,25 +14,25 @@ classdef NdDoF < DoF
     properties
         coord (:, :) sym; % Relative coordinates of sample node in mesh entity (by column).
         % EntDim = 0: no relative coordinate is required.
-        % EntDim = 1: use 1D coordinate "a" where the node is computed as (1 - a) * vertex_1 + a * vertex_2.
-        % EntDim = 2: use 2D coordinates (a, b) where the node is computed as (1 - a - b) * vertex_1 + a * vertex_2 + b * vertex_3.
-        % When `domn` is "D2", `msh.type` is "D2T" and `EntDim` is 1, node are required to distribute symmetrically, e.g. coord = [1/3, 1/2 ,2/3].
+        % EntDim = 1: use 1D coordinate `a` where the node is computed as (1 - a) * vertex_1 + a * vertex_2.
+        % EntDim = 2: use 2D coordinates (a; b) where the node is computed as (1 - a - b) * vertex_1 + a * vertex_2 + b * vertex_3.
+        % Remark: when `domn` is "D2", `msh.type` is "D2T" and `EntDim` is 1, nodes must distribute symmetrically, e.g. coord = [1/3, 1/2 ,2/3].
         ord (:, :); % Order of derivative.
-        % ord(i,j) = k: k-th derivative of j-th function component with respect to i-th variable.
-        % When `domn` is "D2R1", order of derivative is required to be all zero.
+        % ord(i,j) = k: k-th derivative of j-th function component w.r.t. i-th variable.
+        % Remark: when `domn` is "D2R1", only zero order of derivative is supported.
         coef (1, :) Fcn; % Coefficient function.
         form; % Form of DoF: function handle of `coef` and `fcn`.
     end
     properties (Dependent)
         nEnt; % Number of mesh entities.
-        nNode; % Number of sample node.
+        nNode; % Number of sample nodes.
         nSamp; % Number of samplers.
-        nDoF; % Number of degree of freedoms.
+        nDoF; % Number of degrees of freedom.
         sDoF; % Size of DoF group: [nEnt, nNode].
         loc (2, :); % Geometry location of sample node in mesh entity (by column).
         % Only supported for `EntDim` = 2.
-        % loc(1,j) = 0, loc(2,j) = k: j-th node is at k-th vertex of mesh entity.
-        % loc(1,j) = 1, loc(2,j) = k: j-th node is at k-th edge of mesh entity.
+        % - loc(1,j) = 0, loc(2,j) = k: j-th node is at k-th vertex of mesh entity.
+        % - loc(1,j) = 1, loc(2,j) = k: j-th node is at k-th edge of mesh entity.
         LFun; % Length of function value.
     end
     methods
@@ -132,15 +132,18 @@ classdef NdDoF < DoF
         end
         %% Public functions.
         function val = eval(ndDoF, fcn, options)
-            % NdDoF.eval: eval nodal DoF on function.
+            % NdDoF.eval: evaluate nodal DoF on function.
             % val(i,j): function's nodal DoF value at j-th sample node of i-th mesh entity.
             arguments
                 ndDoF NdDoF;
                 fcn Fcn;
                 options.valType {mustBeMember(options.valType, ["sym", "num"])} = "sym"; % Value type.
-                options.rawEval logical = false; % Whether evaluate raw function directly.
+                options.rawEval logical = false; % Raw evaluation.
+                % Sample `fcn` directly, discarding the DoF's `ord`, `coef`, and `form`.
+                % Only supported for scalar-valued function.
             end
             if options.rawEval
+                assert(isscalar(fcn.fun));
                 switch ndDoF.domn
                     case "D2"
                         ndDoF.ord = zeros(2, fcn.nFun);

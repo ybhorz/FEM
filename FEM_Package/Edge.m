@@ -9,8 +9,9 @@ classdef Edge
         % elem < 0: edge is clockwise in element.
         % elem = 0: no connected element.
         type (1, :); % Type of edge.
+        % For example: for 2D rectangular domain,
         % type = 0: interior edge.
-        % type = 1/2/3/4: boundary edge.
+        % type = 1/2/3/4: lower/right/upper/left boundary edge.
     end
     properties (Dependent)
         nEdge; % Number of edges.

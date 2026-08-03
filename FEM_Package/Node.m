@@ -3,9 +3,10 @@ classdef Node
     properties
         coord (:, :); % Coordinate of node (by column).
         type (1, :); % Type of node.
-        % type = 0: interior node (inside domain).
-        % type = +1/2/3/4: boundary node (on specific boundary part).
-        % type = -1/2/3/4: intersection node (at intersection of boundary parts).
+        % For example: for 2D rectangular domain,
+        % type = 0: interior node.
+        % type = +1/2/3/4: lower/right/upper/left boundary node.
+        % type = -1/2/3/4: lower-left/lower-right/upper-right/upper-left corner node.
     end
     properties (Dependent)
         dim; % Dimension.

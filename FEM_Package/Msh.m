@@ -66,7 +66,7 @@ classdef Msh
         end
         %% Public functions.
         function nEnt = nEnt(msh, EntDim)
-            % Msh.nEnt: get number of mesh entities of specified dimension.
+            % Msh.nEnt: get number of mesh entities in specified dimension.
             % EntDim = 0: point.
             % EntDim = 1: line.
             % EntDim = 2: face.
@@ -211,9 +211,9 @@ classdef Msh
                                 ElType(iElem) = ElNdType(1);
                             elseif length(ElNdType) == 2
                                 if ElNdType(2) - ElNdType(1) == 1
-                                    ElType(iElem) =- ElNdType(2);
+                                    ElType(iElem) = -ElNdType(2);
                                 elseif ElNdType(2) - ElNdType(1) == nBdType - 1
-                                    ElType(iElem) =- ElNdType(1);
+                                    ElType(iElem) = -ElNdType(1);
                                 else
                                     error('Invalid element type.');
                                 end

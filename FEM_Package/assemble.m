@@ -2,15 +2,15 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
     % assemble: assemble stiffness matrix and load vector.
     arguments (Input)
         msh Msh; % Mesh.
-        trls (1, :) FES; % Trial finite element spaces.
-        tsts (1, :) FES; % Test finite element spaces.
-        Auvs (1, :) DLF; % Double linear functional.
-        Fvs (1, :) SLF; % Single linear functional.
+        trls (1, :) FES; % Trial function spaces.
+        tsts (1, :) FES; % Test fun spaces.
+        Auvs (1, :) DLF; % Bilinear forms a(u, v).
+        Fvs (1, :) SLF; % Linear forms f(v).
         options.matType {mustBeMember(options.matType, ["sparse", "full"])} = "sparse"; % Type of matrix.
         options.impBC logical = true; % Whether impose boundary conditions.
         options.preSol (1, :) FEF = FEF.empty; % Previous solution.
-        options.Awuv (1, :) LDLF = LDLF.empty; % Linearized double linear functional.
-        options.Fwv (1, :) LSLF = LSLF.empty; % Linearized single linear functional.
+        options.Awuv (1, :) LDLF = LDLF.empty; % Linearized bilinear forms.
+        options.Fwv (1, :) LSLF = LSLF.empty; % Linearized linear forms.
     end
     arguments (Output)
         Stiff (:, :); % Stiffness matrix.
@@ -40,7 +40,13 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
     end
     switch options.matType
         case "sparse"
-            nImax = tsts.cumDoF * sum([trls.nLcDoF]) * 10;
+            nImax = 0;
+            for iAuv = 1:length(Auvs)
+                nImax = nImax + numel(Auvs(iAuv).EntIdx) * trls(abs(Auvs(iAuv).iTrl)).nLcDoF * tsts(abs(Auvs(iAuv).iTst)).nLcDoF;
+            end
+            for iAwuv = 1:length(options.Awuv)
+                nImax = nImax + numel(options.Awuv(iAwuv).EntIdx) * trls(abs(options.Awuv(iAwuv).iTrl)).nLcDoF * tsts(abs(options.Awuv(iAwuv).iTst)).nLcDoF;
+            end
             Is = zeros(nImax, 1); Js = zeros(nImax, 1); Vs = zeros(nImax, 1);
             nI = 0;
         case "full"
@@ -75,19 +81,7 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                             I = cumTstDoF(Auv.iTst) + abs(tst.Lc2Gl(iTstBase, iElem));
                             J = cumTrlDoF(Auv.iTrl) + abs(trl.Lc2Gl(iTrlBase, iElem));
                             V = intVal * sign(tst.Lc2Gl(iTstBase, iElem)) * sign(trl.Lc2Gl(iTrlBase, iElem));
-                            switch options.matType
-                                case "sparse"
-                                    nI = nI + 1;
-                                    if nI > nImax
-                                        nImax = floor(nImax * 1.5);
-                                        Is = [Is; zeros(nImax - length(Is), 1)];
-                                        Js = [Js; zeros(nImax - length(Js), 1)];
-                                        Vs = [Vs; zeros(nImax - length(Vs), 1)];
-                                    end
-                                    Is(nI) = I; Js(nI) = J; Vs(nI) = V;
-                                case "full"
-                                    Stiff(I, J) = Stiff(I, J) + V;
-                            end
+                            asmStiff(I, J, V);
                         end
                     end
                 end
@@ -141,19 +135,7 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                             I = cumTstDoF(abs(Auv.iTst)) + abs(tst.Lc2Gl(iTstBase, iTstEnt));
                             J = cumTrlDoF(abs(Auv.iTrl)) + abs(trl.Lc2Gl(iTrlBase, iTrlEnt));
                             V = intVal * sign(tst.Lc2Gl(iTstBase, iTstEnt)) * sign(trl.Lc2Gl(iTrlBase, iTrlEnt));
-                            switch options.matType
-                                case "sparse"
-                                    nI = nI + 1;
-                                    if nI > nImax
-                                        nImax = floor(nImax * 1.5);
-                                        Is = [Is; zeros(nImax - length(Is), 1)];
-                                        Js = [Js; zeros(nImax - length(Js), 1)];
-                                        Vs = [Vs; zeros(nImax - length(Vs), 1)];
-                                    end
-                                    Is(nI) = I; Js(nI) = J; Vs(nI) = V;
-                                case "full"
-                                    Stiff(I, J) = Stiff(I, J) + V;
-                            end
+                            asmStiff(I, J, V);
                         end
                     end
                 end
@@ -183,100 +165,11 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                             I = cumTstDoF(Awuv.iTst) + abs(tst.Lc2Gl(iTstBase, iElem));
                             J = cumTrlDoF(Awuv.iTrl) + abs(trl.Lc2Gl(iTrlBase, iElem));
                             V = intVal * sign(tst.Lc2Gl(iTstBase, iElem)) * sign(trl.Lc2Gl(iTrlBase, iElem));
-                            switch options.matType
-                                case "sparse"
-                                    nI = nI + 1;
-                                    if nI > nImax
-                                        nImax = floor(nImax * 1.5);
-                                        Is = [Is; zeros(nImax - length(Is), 1)];
-                                        Js = [Js; zeros(nImax - length(Js), 1)];
-                                        Vs = [Vs; zeros(nImax - length(Vs), 1)];
-                                    end
-                                    Is(nI) = I; Js(nI) = J; Vs(nI) = V;
-                                case "full"
-                                    Stiff(I, J) = Stiff(I, J) + V;
-                            end
+                            asmStiff(I, J, V);
                         end
                     end
                 end
-            % case 1 % TODO: implement this case.
-            %     assert(ismember(preSol.elem, "D2T"));
-            %     assert(ismember(trl.elem, ["D2T", "D2LR"]));
-            %     assert(ismember(tst.elem, ["D2T", "D2LR"]));
-            %     EgPmSym = MshEnt("D2LR").parm;
-            %     PrePmSym = sym('preParm', preSol.sElParm);
-            %     TrlPmSym = sym('trlParm', trl.sElParm);
-            %     TstPmSym = sym('tstParm', tst.sElParm);
-            %     coef = Awuv.coef.tfm("D2LR");
-            %     JNorm = Tfm("D2L").JNorm;
-            %     switch preSol.elem
-            %         case "D2T"
-            %             preSolDiv = preSol.dif(Awuv.preOrd).subParm(PrePmSym).tfm("D2LR");
-            %     end
-            %     switch trl.elem
-            %         case "D2T"
-            %             trlBaseDiv = trl.LcBase.dif(Awuv.trlOrd).subParm(TrlPmSym).tfm("D2LR");
-            %         case "D2LR"
-            %             assert(all(Awuv.trlOrd == 0));
-            %             trlBaseDiv = trl.LcBase.dif(Awuv.trlOrd);
-            %     end
-            %     switch tst.elem
-            %         case "D2T"
-            %             tstBaseDiv = tst.LcBase.dif(Awuv.tstOrd).subParm(TstPmSym).tfm("D2LR");
-            %         case "D2LR"
-            %             assert(all(Awuv.tstOrd == 0));
-            %             tstBaseDiv = tst.LcBase.dif(Awuv.tstOrd);
-            %     end
-            %     for iTrlBase = 1:trl.nLcDoF
-            %         for iTstBase = 1:tst.nLcDoF
-            %             intFcn = Awuv.form(coef, preSolDiv, trlBaseDiv(iTrlBase), tstBaseDiv(iTstBase)) .* JNorm;
-            %             intFun = intFcn.getFun("parm", {EgPmSym, PrePmSym, TrlPmSym, TstPmSym});
-            %             for iEdge = Awuv.EntIdx
-            %                 EgParm = msh.node.coord(:, msh.edge.node(:, iEdge));
-            %                 CnElem = msh.edge.elem(:, iEdge);
-            %                 switch preSol.elem
-            %                     case "D2T"
-            %                         iPreEnt = abs(CnElem(sign(CnElem) == sign(Awuv.iPre)));
-            %                 end
-            %                 switch trl.elem
-            %                     case "D2T"
-            %                         iTrlEnt = abs(CnElem(sign(CnElem) == sign(Awuv.iTrl)));
-            %                     case "D2LR"
-            %                         iTrlEnt = iEdge;
-            %                 end
-            %                 switch tst.elem
-            %                     case "D2T"
-            %                         iTstEnt = abs(CnElem(sign(CnElem) == sign(Awuv.iTst)));
-            %                     case "D2LR"
-            %                         iTstEnt = iEdge;
-            %                 end
-            %                 if isempty(iPreEnt) || isempty(iTrlEnt) || isempty(iTstEnt)
-            %                     continue
-            %                 end
-            %                 preParm = preSol.ElParm(:, :, iPreEnt);
-            %                 trlParm = trl.ElParm(:, :, iTrlEnt);
-            %                 tstParm = tst.ElParm(:, :, iTstEnt);
-            %                 preCoef = preSol.ElCoef(:, iPreEnt);
-            %                 intVal = Awuv.GInt.eval(@(x) intFun(x, EgParm, preParm, trlParm, tstParm, preCoef));
-            %                 I = cumTstDoF(abs(Awuv.iTst)) + abs(tst.Lc2Gl(iTstBase, iTstEnt));
-            %                 J = cumTrlDoF(abs(Awuv.iTrl)) + abs(trl.Lc2Gl(iTrlBase, iTrlEnt));
-            %                 V = intVal * sign(tst.Lc2Gl(iTstBase, iTstEnt)) * sign(trl.Lc2Gl(iTrlBase, iTrlEnt));
-            %                 switch options.matType
-            %                     case "sparse"
-            %                         nI = nI + 1;
-            %                         if nI > nImax
-            %                             nImax = floor(nImax * 1.5);
-            %                             Is = [Is; zeros(nImax - length(Is), 1)];
-            %                             Js = [Js; zeros(nImax - length(Js), 1)];
-            %                             Vs = [Vs; zeros(nImax - length(Vs), 1)];
-            %                         end
-            %                         Is(nI) = I; Js(nI) = J; Vs(nI) = V;
-            %                     case "full"
-            %                         Stiff(I, J) = Stiff(I, J) + V;
-            %                 end
-            %             end
-            %         end
-            %     end
+            % case 1 % TODO
         end
     end
     if isequal(options.matType, "sparse")
@@ -297,7 +190,7 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                         intVal = Fv.GInt.eval(@(x) intFun(x, ElParm), ElParm);
                         I = cumTstDoF(Fv.iTst) + abs(tst.Lc2Gl(iTstBase, iElem));
                         V = intVal * sign(tst.Lc2Gl(iTstBase, iElem));
-                        Load(I) = Load(I) + V;
+                        asmLoad(I, V);
                     end
                 end
             case 1
@@ -331,7 +224,7 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                         intVal = Fv.GInt.eval(@(x) intFun(x, EgParm, tstParm));
                         I = cumTstDoF(Fv.iTst) + abs(tst.Lc2Gl(iTstBase, iTstEnt));
                         V = intVal * sign(tst.Lc2Gl(iTstBase, iTstEnt));
-                        Load(I) = Load(I) + V;
+                        asmLoad(I, V);
                     end
                 end
         end
@@ -355,43 +248,10 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                         intVal = Fwv.GInt.eval(@(x) intFun(x, ElParm, preCoef), ElParm);
                         I = cumTstDoF(Fwv.iTst) + abs(tst.Lc2Gl(iTstBase, iElem));
                         V = intVal * sign(tst.Lc2Gl(iTstBase, iElem));
-                        Load(I) = Load(I) + V;
+                        asmLoad(I, V);
                     end
                 end
-            % case 1 % TODO: implement this case.
-            %     assert(ismember(tst.elem, ["D2T", "D2LR"]));
-            %     EgPmSym = MshEnt("D2LR").parm;
-            %     TstPmSym = sym('tstParm', tst.sElParm);
-            %     load = Fv.load.tfm("D2LR");
-            %     JNorm = Tfm("D2L").JNorm;
-            %     switch tst.elem
-            %         case "D2T"
-            %             tstBaseDiv = tst.LcBase.dif(Fv.tstOrd).subParm(TstPmSym).tfm("D2LR");
-            %         case "D2LR"
-            %             tstBaseDiv = tst.LcBase.dif(Fv.tstOrd);
-            %     end
-            %     for iTstBase = 1:tst.nLcDoF
-            %         intFcn = Fv.form(load, tstBaseDiv(iTstBase)) .* JNorm;
-            %         intFun = intFcn.getFun("parm", {EgPmSym, TstPmSym});
-            %         for iEdge = Fv.EntIdx
-            %             EgParm = msh.node.coord(:, msh.edge.node(:, iEdge));
-            %             CnElem = msh.edge.elem(:, iEdge);
-            %             switch tst.elem
-            %                 case "D2T"
-            %                     iTstEnt = abs(CnElem(sign(CnElem) == sign(Fv.iTst)));
-            %                 case "D2LR"
-            %                     iTstEnt = iEdge;
-            %             end
-            %             if isempty(iTstEnt)
-            %                 continue
-            %             end
-            %             tstParm = tst.ElParm(:, :, iTstEnt);
-            %             intVal = Fv.GInt.eval(@(x) intFun(x, EgParm, tstParm));
-            %             I = cumTstDoF(Fv.iTst) + abs(tst.Lc2Gl(iTstBase, iTstEnt));
-            %             V = intVal * sign(tst.Lc2Gl(iTstBase, iTstEnt));
-            %             Load(I) = Load(I) + V;
-            %         end
-            %     end
+            % case 1 % TODO
         end
     end
     if options.impBC
@@ -403,5 +263,26 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                 Load(BdDoFIdx) = trls(iTrl).BC.DoFVal;
             end
         end
+    end
+    % Local functions.
+    function asmStiff(I, J, V)
+        % asmStiff: add value V to entry (I, J) of the stiffness matrix.
+        switch options.matType
+            case "sparse"
+                nI = nI + 1;
+                if nI > nImax
+                    nImax = floor(nImax * 1.5);
+                    Is = [Is; zeros(nImax - length(Is), 1)];
+                    Js = [Js; zeros(nImax - length(Js), 1)];
+                    Vs = [Vs; zeros(nImax - length(Vs), 1)];
+                end
+                Is(nI) = I; Js(nI) = J; Vs(nI) = V;
+            case "full"
+                Stiff(I, J) = Stiff(I, J) + V;
+        end
+    end
+    function asmLoad(I, V)
+        % asmLoad: add value V to entry I of the load vector.
+        Load(I) = Load(I) + V;
     end
 end

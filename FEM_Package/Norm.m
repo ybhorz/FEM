@@ -10,11 +10,6 @@ classdef Norm
         EntIdx (1, :); % Indices of mesh entities.
         %% Integrant.
         ord (:, :, :) % Order of derivative.
-        % ord(i,j) = k: take k-th derivative of j-th function component with respect to i-th variable.
-        % If ~(ord(i,j) >= 0), j-th function component is set to 0.
-        % If 3rd dimension exists, output function is a staking of results from taking different derivative to input function.
-        % - For scalar input, output becomes column vector.
-        % - For column vector input, output becomes matrix.
         pow; % Power of norm.
         iFcn; % Index of function.
         coef (1, :) Fcn; % Coefficient function.
@@ -55,6 +50,7 @@ classdef Norm
             if ~isempty(options.GInt)
                 Norm.GInt = options.GInt;
             else
+                warning("No GInt specified.");
                 switch EntDim
                     case 2
                         Norm.GInt = GInt("D2T", 1);

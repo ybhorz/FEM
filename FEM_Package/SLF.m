@@ -10,12 +10,7 @@ classdef SLF
         EntIdx (1, :); % Indices of mesh entities.
         %% Integrant.
         load (1, :) Fcn; % Load function.
-        tstOrd (:, :, :) % Order of derivative of trial function.
-        % ord(i,j) = k: take k-th derivative of j-th function component with respect to i-th variable.
-        % If ~(ord(i,j) >= 0), j-th function component is set to 0.
-        % If 3rd dimension exists, output function is a staking of results from taking different derivative to input function.
-        % - For scalar input, output becomes column vector.
-        % - For column vector input, output becomes matrix.
+        tstOrd (:, :, :) % Order of derivative of test function.
         iTst; % Index of test function.
         % When `EntDim` = 1, positive/negative `iTst` indicates taking function trace from positive/negative connected element of edge.
         form; % Form of SLF: function handle of `load` and `tst`.
@@ -50,6 +45,7 @@ classdef SLF
             if ~isempty(options.GInt)
                 SLF.GInt = options.GInt;
             else
+                warning("No GInt specified.");
                 switch EntDim
                     case 2
                         SLF.GInt = GInt("D2T", 1);

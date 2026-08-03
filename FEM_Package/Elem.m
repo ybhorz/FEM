@@ -6,11 +6,12 @@ classdef Elem
         edge (:, :); % Indices of edges of element (by column).
         % edge > 0: edge is counter-clockwise in element.
         % edge < 0: edge is clockwise in element.
-        % Order of edges is consistent with order of nodes: [node1, edge1, node2, edge2, ...].
+        % Edge order matches node order: [node1, edge1, node2, edge2, ...].
         type (1, :); % Type of element.
+        % For example: for 2D rectangular domain,
         % type = 0: interior element.
-        % type = + 1/2/3/4: boundary element.
-        % type = - 1/2/3/4: intersection element.
+        % type = + 1/2/3/4: lower/right/upper/left boundary element.
+        % type = - 1/2/3/4: lower-left/lower-right/upper-right/upper-left corner element.
     end
     properties (Dependent)
         nElem; % Number of elements.

@@ -43,7 +43,8 @@ classdef Tfm
             JDet = Fcn(dual(tfm.domn), det(jacobian(tfm.toOrg, tfm.refVar)));
         end
         function JNorm = get.JNorm(tfm)
-            JNorm = Fcn(dual(tfm.domn), norm(jacobian(tfm.toOrg, tfm.refVar)));
+            % JNorm = Fcn(dual(tfm.domn), norm(jacobian(tfm.toOrg, tfm.refVar)));
+            JNorm = Fcn(dual(tfm.domn), sqrt(sum(jacobian(tfm.toOrg, tfm.refVar).^2)));
         end
         function refTfm = get.refTfm(tfm)
             refTfm = Fcn(tfm.domn, tfm.toRef);

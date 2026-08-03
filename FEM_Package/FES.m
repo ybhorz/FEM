@@ -6,16 +6,16 @@ classdef FES
         LcBase (1, :) Fcn; % Local base function.
         ElParm (:, :, :); % Parameter of base function on each element.
         % ElParm(:, :, i): parameter for i-th element.
-        GlDoFs (1, :) DoF = NdDoF.empty; % Global degree of freedoms.
+        GlDoFs (1, :) DoF = NdDoF.empty; % Global degrees of freedom.
         Lc2Gl (:, :); % Mapping from local DoFs to global DoFs.
         % Lc2Gl(i, j): global DoF index of i-th local DoF on j-th element.
-        % Negative value indicates corresponding base function takes negative value.
+        % Negative value indicates corresponding base function takes negative sign.
         BC BC; % Boundary condition.
     end
     properties (Dependent)
-        nLcDoF; % Number of local degree of freedoms.
+        nLcDoF; % Number of local degrees of freedom.
         sElParm (1, 2); % Size of element parameter.
-        nGlDoF; % Number of global degree of freedoms.
+        nGlDoF; % Number of global degrees of freedom.
     end
     methods
         %% Constructor.
@@ -44,7 +44,7 @@ classdef FES
                     % end
                     FES.ElParm = reshape(msh.node.coord(:, msh.edge.node), msh.dim, msh.edge.nNode, msh.nEdge);
             end
-            [FES.GlDoFs, FES.Lc2Gl] = assemble(msh, fE.DoFs);
+            [FES.GlDoFs, FES.Lc2Gl] = asmDoF(msh, fE.DoFs);
             if ~isempty(bC)
                 FES.BC = bC.setDoF(FES.GlDoFs);
             else
@@ -70,7 +70,7 @@ classdef FES
         end
         %% Public functions.
         function cumDoF = cumDoF(FESs, iFES)
-            % FES.cumDoF: cumulative number of DoFs to the i-th finite element space.
+            % FES.cumDoF: cumulative number of DoFs up to the i-th FE space.
             if nargin == 1
                 cumDoF = sum([FESs.nGlDoF]);
             elseif nargin == 2
@@ -100,8 +100,8 @@ classdef FES
     end
 end
 %% Local functions.
-function [GlDoFs, Lc2Gl] = assemble(msh, LcDoFs)
-    % assemble: assemble local DoFs to global DoFs.
+function [GlDoFs, Lc2Gl] = asmDoF(msh, LcDoFs)
+    % asmDoF: assemble local DoFs to global DoFs.
     assert(ismember(msh.type, "D2T"));
     GlDoFs = LcDoFs;
     if ismember(LcDoFs.getDomn, "D2")

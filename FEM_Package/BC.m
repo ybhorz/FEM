@@ -1,13 +1,14 @@
 classdef BC
     % BC: boundary condition.
     properties
-        fcn (1, :) Fcn; % Boundary function.
+        fcn (1, :) Fcn; % Boundary condition function.
+                        % Degree of freedom takes specified value at the boundary.
         % Mesh.
         node (1, :); % Index of boundary node.
         edge (1, :); % Index of boundary edge.
         % Degree of freedom.
-        DoFIdx (1, :); % Index of boundary degree of freedom.
-        DoFVal (1, :); % Value of boundary degree of freedom.
+        DoFIdx (1, :); % Index of boundary DoF.
+        DoFVal (1, :); % Value of boundary DoF.
     end
     methods
         % Constructor.
@@ -35,6 +36,7 @@ classdef BC
             BC.DoFVal = zeros(1, DoFs.cumDoF);
             for iDoF = 1:length(DoFs)
                 DoF = DoFs(iDoF);
+                assert(isscalar(BC.fcn(iDoF)));
                 val = DoF.eval(BC.fcn(iDoF), "valType", "num", "rawEval", true);
                 switch DoF.EntDim
                     case 0

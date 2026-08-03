@@ -12,11 +12,11 @@ classdef FE
         FS (:, :, :) sym; % Function space.
         % If dim(FS) = 2, function space consists of scalar/vector-valued functions spanned by FS(:,i).
         % If dim(FS) = 3, function space consists of matrix-valued functions spanned by FS(:,:,i).
-        DoFs (1, :) DoF = NdDoF.empty; % Degree of freedoms.
+        DoFs (1, :) DoF = NdDoF.empty; % Degrees of freedom.
         base (1, :) Fcn; % Base function.
     end
     properties (Dependent)
-        nDoF; % Number of degree of freedoms.
+        nDoF; % Number of degrees of freedom.
     end
     methods
         % Constructor.

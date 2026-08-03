@@ -16,7 +16,7 @@ classdef MshEnt
     %        |     |                         |            |          |   y1, y2 ]
 
     properties
-        type {mustBeMember(type, ["VOID", "D2", "D2R", "D2R1" "D2T", "D2TR", "D2L", "D2LR"])} = "VOID"; % Type of mesh entity.
+        type {mustBeMember(type, ["VOID", "D2", "D2R", "D2R1", "D2T", "D2TR", "D2L", "D2LR"])} = "VOID"; % Type of mesh entity.
         % D: dimension.
         % T: triangle.
         % L: line.
@@ -195,7 +195,7 @@ classdef MshEnt
         end
         %% Public functions.
         function mshEnt = dual(mshEnt)
-            % MshEnt.dual: dual of mesh entity.
+            % MshEnt.dual: dual of mesh entity (original <-> reference).
             arguments (Input)
                 mshEnt MshEnt;
             end
@@ -220,7 +220,7 @@ classdef MshEnt
             end
         end
         function flag = ismember(mshEnt1, mshEnt2)
-            % MshEnt.ismember: check if mshEnt1 is member of mshEnt2.
+            % MshEnt.ismember: check if `mshEnt1` is member of `mshEnt2`.
 
             %      | D2 | D2R | D2R1| D2T | D2TR | D2L | D2LR
             %------|----|-----|-----|-----|------|-----|------

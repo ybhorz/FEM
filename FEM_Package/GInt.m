@@ -2,7 +2,8 @@ classdef GInt
     % GInt: Gauss integration.
     properties
         domn {mustBeMember(domn, ["VOID", "D2T", "D2L"])} = "VOID"; % Domain of integration.
-        ord {mustBeMember(ord, [0, 1, 2, 3, 4])}; % Order of integration.
+        ord {mustBeMember(ord, [0, 1, 2, 3, 4, 5, 6, 7])}; % Order of integration.
+        % - algebraic precision: the rule integrates polynomials up to this degree exactly.
         pnt (:, :); % Coordinates of Gauss points in reference domain (by column).
         wgt (1, :); % Weights of Gauss points in reference domain.
     end
@@ -15,7 +16,7 @@ classdef GInt
         function GInt = GInt(domn, ord)
             arguments
                 domn {mustBeMember(domn, ["D2T", "D2L"])};
-                ord {mustBeMember(ord, [0, 1, 2, 3, 4])};
+                ord {mustBeMember(ord, [0, 1, 2, 3, 4, 5, 6, 7])};
             end
             GInt.domn = domn;
             GInt.ord = ord;
@@ -39,6 +40,8 @@ classdef GInt
                                         0.4459484909, 0.1081030182, 0.4459484909, 0.0915762135, 0.8168475729, 0.0915762135];
                             GInt.wgt = [0.1116907948390055, 0.1116907948390055, 0.1116907948390055, ...
                                         0.054975871827661, 0.054975871827661, 0.054975871827661];
+                        otherwise
+                            error("Not supported integration order.");
                     end
                     GInt.orgTfm = Tfm(GInt.domn).orgTfm.getFun;
                     GInt.Jac = Tfm(GInt.domn).JDet.getFun;
@@ -48,17 +51,19 @@ classdef GInt
                         case {0, 1}
                             GInt.pnt = 1/2;
                             GInt.wgt = 1;
-                        case 2
+                        case {2, 3}
                             GInt.pnt = [(1 - sqrt(3) / 3) / 2, (1 + sqrt(3) / 3) / 2];
                             GInt.wgt = [1/2, 1/2];
-                        case 3
+                        case {4, 5}
                             GInt.pnt = [(1 - sqrt(15) / 5) / 2, 1/2, (1 + sqrt(15) / 5) / 2];
                             GInt.wgt = [5/18, 4/9, 5/18];
-                        case 4
+                        case {6, 7}
                             a = sqrt((3 + 2 * sqrt(6/5)) / 7);
                             b = sqrt((3 - 2 * sqrt(6/5)) / 7);
                             GInt.pnt = [(1 - a) / 2, (1 - b) / 2, (1 + b) / 2, (1 + a) / 2];
                             GInt.wgt = [(18 - sqrt(30)) / 72, (18 + sqrt(30)) / 72, (18 + sqrt(30)) / 72, (18 - sqrt(30)) / 72];
+                        otherwise
+                            error("Not supported integration order.");
                     end
                     GInt.orgTfm = Tfm(GInt.domn).orgTfm.getFun;
                     GInt.Jac = Tfm(GInt.domn).JNorm.getFun;
