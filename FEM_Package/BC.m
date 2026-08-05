@@ -10,6 +10,9 @@ classdef BC
         DoFIdx (1, :); % Index of boundary DoF.
         DoFVal (1, :); % Value of boundary DoF.
     end
+    properties (Dependent)
+        nDoF; % Number of boundary DoF.
+    end
     methods
         % Constructor.
         function BC = BC(fcn, options)
@@ -21,6 +24,11 @@ classdef BC
             BC.fcn = fcn;
             BC.node = options.node;
             BC.edge = options.edge;
+        end
+        % Get functions.
+        function nDoF = get.nDoF(BC)
+            assert(length(BC.DoFIdx) == length(BC.DoFVal));
+            nDoF = length(BC.DoFIdx);
         end
         % Public functions.
         function BC = setDoF(BC, DoFs)

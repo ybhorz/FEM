@@ -75,7 +75,7 @@ SDG_0V_FES = FES(msh, SDG_0V_FE);
 %[text] Matrix $SDG\_0$ element
 %[text] - Element: triangle
 %[text] - Function space: $P^{2 \\times 2}\_0$
-%[text] - Nodal DoF: $(v \\cdot n) \\cdot n |\_c$ at midpoint of one edge, and $(v \\cdot n) \\cdot t |\_c$ at midpoint of three ege \
+%[text] - Nodal DoF: $(v \\cdot n) \\cdot n |\_c$ at midpoint of one edge, and $(v \\cdot n) \\cdot t |\_c$ at midpoint of three edge \
 %[text] Matrix $SDG\_0$ element space
 %[text] - $\\Sigma\_h = \\{ \\tau \\in L^2 (\\Omega, R^{2 \\times 2}) : \\tau|\_K \\in P\_0 (K)^{2 \\times 2}, \\forall K \\in T\_h; \\ \[\\tau \\cdot n\]\_e = 0, \\forall e \\in F^{pr, o}\_h; \\ \[(\\tau \\cdot n) \\cdot t\]\_e = 0, \\forall e \\in F^{dl}\_h \\}$ \
 SDG_0M_FE = FE("D2T", FE.repFS("1", [2, 2]), ...

@@ -1,271 +1,243 @@
-%[text] ## Fcn
-%[text] ### Constructor
-Fcn("D2", "[x+y;x-y]").var
-Fcn("D2", "[x+y;x-y]").parm
-Fcn("D2", "[x+y;x-y]").fun
+%[text] # Fcn - Symbolic Function
 %%
-Fcn("D2R", "[l+m;l-m]").var
-Fcn("D2R", "[l+m;l-m]").parm
-Fcn("D2R", "[l+m;l-m]").fun
+%[text] ## Constructor
+disp(Fcn("D2", "x+y").var);
+
+disp(Fcn("D2R", "l+m;").var);
+
+disp(Fcn("D2R1", "s").var);
+
+disp(Fcn("D2T", "x+y").var);
+disp(Fcn("D2T", "x+y").parm);
+
+disp(Fcn("D2TR", "l+m").var);
+disp(Fcn("D2TR", "l+m").parm);
+
+disp(Fcn("D2L", "x+y").var);
+disp(Fcn("D2L", "x+y").parm);
+
+disp(Fcn("D2LR", "s").var);
+disp(Fcn("D2LR", "s").parm);
+
+disp(Fcn("D2", "x+y").fun);
+disp(Fcn("D2", "[x;y]").fun);
+disp(Fcn("D2T", "[x,y;y,x]").fun);
+
+disp(Fcn("D2T", "[c1*x;c2*y]", "[c1;c2]").fun);
+disp(Fcn("D2T", "[c1*x;c2*y]", "[c1;c2]").coef);
 %%
-Fcn("D2R1", "[s;s]").var
-Fcn("D2R1", "[s;s]").parm
-Fcn("D2R1", "[s;s]").fun
+%[text] ## Get functions
+fcn = Fcn("D2T", "[c1*x;c2*y]", "[c1;c2]");
+disp(fcn.nVar);
+disp(fcn.nFun);
+disp(fcn.sParm);
+disp(fcn.nCoef);
+
+fcn = Fcn("D2T", "[x,y;y,x]");
+disp(fcn.nFun);
 %%
-Fcn("D2T", "[x+y;x-y]").var
-Fcn("D2T", "[x+y;x-y]").parm
-Fcn("D2T", "[x+y;x-y]").fun
-%%
-Fcn("D2TR", "[l+m;l-m]").var
-Fcn("D2TR", "[l+m;l-m]").parm
-Fcn("D2TR", "[l+m;l-m]").fun
-%%
-Fcn("D2L", "[x+y;x-y]").var
-Fcn("D2L", "[x+y;x-y]").parm
-Fcn("D2L", "[x+y;x-y]").fun
-%%
-Fcn("D2LR", "[s;s]").var
-Fcn("D2LR", "[s;s]").parm
-Fcn("D2LR", "[s;s]").fun
-%%
-Fcn("D2T", "[x+y;x-y]", "[c1;c2;c3]").coef
-%%
-Fcn("D2T", "[x,1;1,y]").fun
-%%
-%[text] ### Get functions
-fcn = Fcn("D2T", "[x+y;x-y]", "[c1;c2;c3]");
-fcn.nVar
-fcn.nFun
-fcn.sParm
-fcn.nCoef
-%%
-Fcn("D2T", "[x,1;1,y]").nFun
-%%
-%[text] getDomn
+%[text] ### getDomn
 fcns = [Fcn("D2", "1"), Fcn("D2T", "1")];
-fcns.getDomn
+disp(fcns.getDomn);
 
-% Check.
+% % Invalid: incompatible domains raise an error.
 % fcns = [Fcn("D2T", "1"), Fcn("D2TR", "1")];
-% fcns.getDomn
+% disp(fcns.getDomn);
 %%
-%[text] getFun
-Fcn("D2", "x+y").getFun
-Fcn("D2T", "x+y+x1+x2").getFun
-Fcn("D2T", "c1*x+c2*y+x1+x2", "[c1;c2]").getFun
-Fcn("D2", "x+y+x1+x2").getFun("coef", {"[x1,x2;y1,y2]"})
+%[text] ### getFun
+disp(Fcn("D2", "x+y").getFun);
+disp(Fcn("D2T", "x+y+x1+x2").getFun);
+disp(Fcn("D2T", "c1*x+c2*y+x1+x2", "[c1;c2]").getFun);
+disp(Fcn("D2", "c1*x+c2*y+x1+x2").getFun("parm", {"[x1,x2;y1,y2]"}, "coef", {"[c1;c2]"}));
 %%
-fun = Fcn("D2T", "x+x2").getFun;
-fun = fun([1, 2, 3; 4, 5, 6], [1, 2, 3; 4, 5, 6])
+fun = Fcn("D2T", "c1*x+c2*y+x1+x2", "[c1;c2]").getFun;
+disp(fun(str2sym("[P;P]"), str2sym("[X1,X2,X3;Y1,Y2,Y3]"), str2sym("[C1;C2]")));
+disp(fun(str2sym("[P1,P2,P3;P1,P2,P3]"), str2sym("[X1,X2,X3;Y1,Y2,Y3]"), str2sym("[C1;C2]")));
 
-fun = Fcn("D2T", "1").getFun;
-fun = fun([1, 2, 3; 4, 5, 6], [1, 2, 3; 4, 5, 6])
-
-fun = Fcn("D2T", "x2").getFun;
-fun = fun(str2sym("[1,2,3;4,5,6]"), str2sym("[x1,x2,x3;y1,y2,y3]"))
+fun = Fcn("D2", "1").getFun;
+disp(fun([1, 2, 3; 1, 2, 3]));
 %%
-%[text] ### Overload intrinsic operators
-fcn1 = Fcn("D2T", "x+y");
-fcn2 = Fcn("D2T", "[sin(x);cos(y)]");
-fcn0 = fcn1 + fcn2; fcn0.fun
-fcn0 = fcn1 - fcn2; fcn0.fun
-fcn0 = -fcn2; fcn0.fun
-fcn0 = fcn1 * fcn2; fcn0.fun
-fcn0 = fcn1 * 2; fcn0.fun
-fcn0 = fcn1 \ fcn2; fcn0.fun
-fcn0 = fcn1 \ 2; fcn0.fun
-fcn0 = fcn1 .* fcn2; fcn0.fun
-fcn0 = fcn1 .\ fcn2; fcn0.fun
-fcn0 = fcn1 .^ 2; fcn0.fun
-fcn0 = fcn2.'; fcn0.fun
+%[text] ## `Overload intrinsic operators`
+fcn1 = Fcn("D2", "x+y");
+fcn2 = Fcn("D2", "[sin(x);cos(y)]");
 
-% Check
-% Fcn("D2") .* Fcn("D2R")
-% Fcn("D2", "x", "c1") .* Fcn("D2", "x", "c2")
-%%
-%[text] merge
-fcn = Fcn("VOID", "1") .* Fcn("D2", "1"); fcn.domn
-fcn = Fcn("D2", "1") .* Fcn("VOID", "1"); fcn.domn
-fcn = Fcn("D2", "1") .* Fcn("D2T", "1"); fcn.domn
-fcn = Fcn("D2T", "1") .* Fcn("D2", "1"); fcn.domn
-%%
-%[text] plus
-fcn1 = Fcn("D2T", "x+y", "[c1;c2]");
-fcn2 = Fcn("D2T", "[sin(x);cos(y)]", "[b1;b2]");
-fcn0 = fcn1 + fcn2; fcn0.coef
-%%
-%[text] ### `Overload intrinsic functions`
-fcn1 = Fcn("D2T", "[x+y;x-y]");
-fcn2 = Fcn("D2T", "[sin(x);cos(y)]");
+fcn0 = fcn1 + fcn2; disp(fcn0.fun);
+fcn0 = fcn1 - fcn2; disp(fcn0.fun);
+fcn0 = -fcn1; disp(fcn0.fun);
+fcn0 = fcn1 * fcn2; disp(fcn0.fun);
+fcn0 = fcn1 * 2; disp(fcn0.fun);
+fcn0 = fcn1 \ fcn2; disp(fcn0.fun);
+fcn0 = fcn1 \ 2; disp(fcn0.fun);
 
-sum(fcn1).fun
-abs(fcn1).fun
-dot(fcn1, fcn2).fun
-diff(fcn1, "x", 1).fun
+fcn1 = Fcn("D2", "[x+y;x-y]");
+fcn2 = Fcn("D2", "[sin(x);cos(y)]");
+
+fcn0 = fcn1 .* fcn2; disp(fcn0.fun);
+fcn0 = fcn1 .\ fcn2; disp(fcn0.fun);
+fcn0 = fcn1 .^ 2; disp(fcn0.fun);
+fcn0 = fcn2.'; disp(fcn0.fun);
+
+% % Invalid: incompatible domains and coefficients raise an error.
+% Fcn("D2", "1") .* Fcn("D2R", "1")
+% Fcn("D2", "1", "c1") .* Fcn("D2", "1", "c2")
 %%
-%[text] ### Mathematical operations
-%[text] eval
-Fcn("D2T", "x+y").eval([1; 2])
-Fcn("D2T", "x+y").eval("[x1;y1]")
+%[text] ### Domn merge
+fcn = Fcn("VOID", "1") .* Fcn("D2", "1"); disp(fcn.domn);
+fcn = Fcn("D2", "1") .* Fcn("D2T", "1"); disp(fcn.domn);
+fcn = Fcn("D2", "1") .* Fcn("D2L", "1"); disp(fcn.domn);
+fcn = Fcn("D2R", "1") .* Fcn("D2TR", "1"); disp(fcn.domn);
+fcn = Fcn("D2R1", "1") .* Fcn("D2LR", "1"); disp(fcn.domn);
+fcn = Fcn("D2L", "1") .* Fcn("D2T", "1"); disp(fcn.domn);
 %%
-%[text] comb
-comb([Fcn("D2", "x"), Fcn("D2", "y")], [1;2]).fun
-comb([Fcn("D2", "x"), Fcn("D2", "y")], [1;2]).coef
+%[text] ### `Coefficient concatenation`
+fcn1 = Fcn("D2", "1", "[c1;c2]");
+fcn2 = Fcn("D2", "1", "[c3;c4]");
 
-comb([Fcn("D2", "x", "[c1;c2]"), Fcn("D2", "y", "[b1;b2]")], [1;2]).fun
-comb([Fcn("D2", "x", "[c1;c2]"), Fcn("D2", "y", "[b1;b2]")], [1;2]).coef
-
-
-comb([Fcn("D2", "x"), Fcn("D2", "y")], "[c1;c2]").fun
-comb([Fcn("D2", "x"), Fcn("D2", "y")], "[c1;c2]").coef
-
-% Check
-% comb([Fcn("D2", "x", "[c1;c2]"), Fcn("D2", "y", "[b1;b2]")], "[c1;c2]").fun
-% comb([Fcn("D2", "x", "[c1;c2]"), Fcn("D2", "y", "[b1;b2]")], "[c1;c2]").coef
+fcn0 = fcn1 + fcn2; disp(fcn0.coef);
+fcn0 = fcn1 - fcn2; disp(fcn0.coef);
 %%
-%[text] tfm
+%[text] ## Overloaded intrinsic functions
+fcn1 = Fcn("D2", "[x+y;x-y]");
+fcn2 = Fcn("D2", "[sin(x);cos(y)]");
+fcn3 = Fcn("D2", "(1+x)^2/(1+2*x+x^2)");
+
+disp(sum(fcn1).fun);
+disp(abs(fcn1).fun);
+disp(dot(fcn1, fcn2).fun);
+disp(diff(fcn1, "y", 1).fun);
+disp(simplify(fcn3).fun);
+disp(subs(fcn1, "x", "1").fun);
+%%
+%[text] ## `Mathematical operations`
+%%
+%[text] ### eval
+disp(Fcn("D2T", "x+y").eval([1; 2]));
+disp(Fcn("D2T", "x+y").eval("[x1;y1]"));
+%%
+%[text] ### comb
+disp(comb([Fcn("D2", "x"), Fcn("D2", "y")], [1; 2]).fun);
+
+disp(comb([Fcn("D2", "x", "[c1;c2]"), Fcn("D2", "y", "[b1;b2]")], [1; 2]).fun);
+disp(comb([Fcn("D2", "x", "[c1;c2]"), Fcn("D2", "y", "[b1;b2]")], [1; 2]).coef);
+
+disp(comb([Fcn("D2", "x"), Fcn("D2", "y")], "[c1;c2]").fun);
+disp(comb([Fcn("D2", "x"), Fcn("D2", "y")], "[c1;c2]").coef);
+
+% % Invalid: functions already carry coefficients, and weights are of symbolic type.
+% disp(comb([Fcn("D2", "x", "[c1;c2]"), Fcn("D2", "y", "[b1;b2]")], "[c1;c2]").fun);
+%%
+%[text] ### tfm
+%[text] #### D2TR $\\rightarrow$ D2T
 fcn = Fcn("D2TR", "[l;m]").tfm("D2T");
-fcn.domn
-fcn.var
-fcn.fun
-fcn.parm
-fcn.eval("[x1;y1]")
-fcn.eval("[x2;y2]")
-fcn.eval("[x3;y3]")
+disp(fcn.domn);
+disp(fcn.fun);
+disp(fcn.eval("[x1;y1]"));
+disp(fcn.eval("[x2;y2]"));
+disp(fcn.eval("[x3;y3]"));
 %%
+%[text] #### D2T $\\rightarrow$ D2TR
 fcn = Fcn("D2T", "[x;y]").tfm("D2TR");
-fcn.domn
-fcn.var
-fcn.fun
-fcn.parm
-fcn.eval("[0;0]")
-fcn.eval("[1;0]")
-fcn.eval("[0;1]")
+disp(fcn.domn);
+disp(fcn.fun);
+disp(fcn.eval("[0;0]"));
+disp(fcn.eval("[1;0]"));
+disp(fcn.eval("[0;1]"));
 %%
+%[text] #### D2L $\\rightarrow$ D2LR
 fcn = Fcn("D2L", "[x;y]").tfm("D2LR");
-fcn.domn
-fcn.var
-fcn.fun
-fcn.parm
-fcn.eval("0")
-fcn.eval("0.5")
-fcn.eval("1")
+disp(fcn.domn);
+disp(fcn.fun);
+disp(fcn.eval("0"));
+disp(fcn.eval("0.5"));
+disp(fcn.eval("1"));
 %%
+%[text] #### array operation
 fcns = [Fcn("D2T", "[x;y]"), Fcn("D2T", "[y;x]")];
-fcns.tfm("D2TR").fun
+disp(fcns.tfm("D2TR").fun);
 %%
-%[text] dif
-fcn = Fcn("D2T", ["sin(x)+cos(y)"; "x^3+y^4"]);
-fcn.dif([1, 0; 0, 0]).fun
-fcn.dif([0, 0; 1, 0]).fun
-fcn.dif([0, 1; 0, 0]).fun
-fcn.dif([0, 0; 0, 1]).fun
-fcn.dif([0, nan; 0, nan]).fun
+%[text] ### dif
+%[text] #### vector function
+fcn = Fcn("D2T", ["sin(x)+cos(y)"; "x-y"]);
+%[text] $\[\\partial\_x v\_x \\, ; v\_y\]$
+disp(fcn.dif([1, 0; 0, 0]).fun);
+%[text] $\[\\partial\_y v\_x \\, ; v\_y\]$
+disp(fcn.dif([0, 0; 1, 0]).fun);
+%[text] $\[v\_x \\, ; \\partial\_x v\_y\]$
+disp(fcn.dif([0, 1; 0, 0]).fun);
+%[text] $\[v\_x \\, ; \\partial\_y v\_y\]$
+disp(fcn.dif([0, 0; 0, 1]).fun);
+%[text] $\[v\_x \\, ; 0\]$
+disp(fcn.dif([0, nan; 0, nan]).fun);
+%[text] $\[0 \\, ; v\_y\]$
+disp(fcn.dif([nan, 0; nan, 0]).fun);
 %%
+%[text] #### matrix function
 fcn = Fcn("D2T", "[x,1;1,y]");
-fcn.dif([1,0;1,0;0,0;0,0]').fun
-fcn.dif([0,0;0,0;0,1;0,1]').fun
+%[text] #### 
+%[text] $\[ \\partial\_x v\_{xx} \\, , v\_{xy} \] \\\\\n\[ \\partial\_x v\_{yx} \\, , v\_{yy} \]$
+disp(fcn.dif([1, 0; 1, 0; 0, 0; 0, 0]').fun);
+%[text] #### 
+%[text] $\[ v\_{xx} \\, , \\partial\_y v\_{xy} \] \\\\\n\[ v\_{yx} \\, , \\partial\_y v\_{yy} \]$
+disp(fcn.dif([0, 0; 0, 0; 0, 1; 0, 1]').fun);
 %%
-fcns = [Fcn("D2T", "sin(x)+cos(y)"), Fcn("D2T", "x^3+y^4")];
-fcns.dif([1; 0]).fun
+%[text] #### array operation
+fcns = [Fcn("D2T", "sin(x)+cos(y)"), Fcn("D2T", "x-y")];
+disp([fcns.dif([1; 0]).fun]);
 %%
-fcn = Fcn("D2T", "x*y");
-grad = cat(3, [1;0], [0;1]);
-fcn.dif(grad).fun
+%[text] #### dimension upgrade
+%[text] scalar $\\rightarrow$ vector
+fcn = Fcn("D2T", "x-y");
+grad = cat(3, [1; 0], [0; 1]);
+disp(fcn.dif(grad).fun);
+%[text] vector $\\rightarrow$ matrix
+fcn = Fcn("D2T", "[x-y;x^2+y^2]");
+grad = cat(3, [1, 1; 0, 0], [0, 0; 1, 1]);
+disp(fcn.dif(grad).fun);
 %%
-fcn = Fcn("D2T", "[1+x+y;1+x^2+y^2]");
-grad = cat(3, [1,1;0,0], [0,0;1,1]);
-fcn.dif(grad).fun
+%[text] ### int
+%[text] $\\int\_K v \\, dx \\, dy$
+disp(Fcn("D2", "1").int("D2T").fun);
+disp(Fcn("D2T", "x").int("D2T").fun);
 %%
-%[text] int
-Fcn("D2", "1").int("D2T")
-Fcn("D2", "x").int("D2T")
-Fcn("D2T", "x").int("D2T")
+%[text] $\\int\_{\\hat{K}} \\hat{v} \\, d \\hat{x} \\, d \\hat{y}$
+disp(Fcn("D2R", "1").int("D2TR").fun);
+disp(Fcn("D2TR", "l").int("D2TR").fun);
 %%
-Fcn("D2R", "1").int("D2TR")
-Fcn("D2R", "l").int("D2TR")
-Fcn("D2TR", "l").int("D2TR")
+%[text] $\\int\_e v \\, ds$
+disp(Fcn("D2", "1").int("D2L").fun);
+disp(Fcn("D2L", "x").int("D2L").fun);
 %%
-Fcn("D2", "1").int("D2L")
-Fcn("D2", "x").int("D2L")
-Fcn("D2L", "x").int("D2L")
+%[text] $\\int\_e v \\, ds$
+disp(Fcn("D2T", "1").int("D2L", 2).fun);
+disp(Fcn("D2T", "x").int("D2L", 2).fun);
 %%
-Fcn("D2T", "1").int("D2L", 2)
-Fcn("D2T", "x").int("D2L", 2)
+%[text] $\\int\_{\\hat{e}} \\hat{v} \\, d \\hat{s}$
+disp(Fcn("D2R1", "1").int("D2LR").fun);
+disp(Fcn("D2LR", "s").int("D2LR").fun);
 %%
-Fcn("D2R1", "1").int("D2LR")
-Fcn("D2R1", "s").int("D2LR")
-Fcn("D2LR", "s").int("D2LR")
+%[text] $\\int\_{\\hat{e}} \\hat{v} \\, d \\hat{s}$
+disp(Fcn("D2R", "1").int("D2LR", 2).fun);
+disp(Fcn("D2TR", "s").int("D2LR", 2).fun);
 %%
-Fcn("D2R", "1").int("D2LR", 2)
-Fcn("D2R", "s").int("D2LR", 2)
-Fcn("D2TR", "s").int("D2LR", 2)
+%[text] ## `Parameter and coefficient management`
+fcn = Fcn("D2T", "c1*x+c2*y+x1+x2", "[c1;c2]");
+%[text] ### clrParm
+fcn0 = fcn.clrParm;
+disp(fcn0.domn); disp(fcn0.fun); disp(fcn0.parm); disp(fcn0.coef);
+%[text] ### clrCoef
+fcn0 = fcn.clrCoef;
+disp(fcn0.domn); disp(fcn0.fun); disp(fcn0.parm); disp(fcn0.coef);
+%[text] ### subParm
+fcn0 = fcn.subParm("[X1,X2,X3;Y1,Y2,Y3]");
+disp(fcn0.domn); disp(fcn0.fun); disp(fcn0.parm); disp(fcn0.coef);
+%[text] ### subCoef
+fcn0 = fcn.subCoef("[C1;C2]");
+disp(fcn0.domn); disp(fcn0.fun); disp(fcn0.parm); disp(fcn0.coef);
 %%
-%[text] ### Parameter and coefficient management
-%[text] subParm
-fcn = Fcn("D2T", "x+y+x1+x2").subParm("[a,b,c;d,e,f]");
-fcn.domn
-fcn.fun
-fcn.parm
-%%
-fcns = [Fcn("D2T", "x+y+x1+x2"), Fcn("D2T", "x+y+y1+y2")];
-fcns.subParm("[a,b,c;d,e,f]").fun
-%%
-%[text] subCoef
-fcn = Fcn("D2T", "c1*x+c2*y", "[c1;c2]").subCoef("[a;b]");
-fcn.domn
-fcn.fun
-fcn.coef
-%%
-%[text] ### Static functions
-%[text] cst
-Fcn.cst(1)
-%%
-%[text] ## Tfm
-%[text] Constructor
-Tfm("D2T")
-Tfm("D2L")
-%%
-%[text] JDet
-Tfm("D2T").JDet.domn
-Tfm("D2T").JDet.var
-Tfm("D2T").JDet.fun
-Tfm("D2T").JDet.parm
-%%
-%[text] JNorm
-Tfm("D2L").JNorm.domn
-Tfm("D2L").JNorm.var
-Tfm("D2L").JNorm.fun
-Tfm("D2L").JNorm.parm
-%%
-%[text] `refTfm`
-Tfm("D2T").refTfm.domn
-Tfm("D2T").refTfm.var
-Tfm("D2T").refTfm.fun
-Tfm("D2T").refTfm.parm
-
-Tfm("D2T").refTfm.eval("[x1;y1]")
-Tfm("D2T").refTfm.eval("[x2;y2]")
-Tfm("D2T").refTfm.eval("[x3;y3]")
-%%
-%[text] orgTfm
-Tfm("D2T").orgTfm.domn
-Tfm("D2T").orgTfm.var
-Tfm("D2T").orgTfm.fun
-Tfm("D2T").orgTfm.parm
-
-Tfm("D2T").orgTfm.eval("[0;0]")
-Tfm("D2T").orgTfm.eval("[1;0]")
-Tfm("D2T").orgTfm.eval("[0;1]")
-%%
-Tfm("D2L").orgTfm.domn
-Tfm("D2L").orgTfm.var
-Tfm("D2L").orgTfm.fun
-Tfm("D2L").orgTfm.parm
-
-Tfm("D2L").orgTfm.eval("0")
-Tfm("D2L").orgTfm.eval("0.5")
-Tfm("D2L").orgTfm.eval("1")
+%[text] ## Static functions
+%[text] ### `cst`
+disp(Fcn.cst(1).domn);
+disp(Fcn.cst(1).fun);
 
 %[appendix]{"version":"1.0"}
 %---

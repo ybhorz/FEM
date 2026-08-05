@@ -41,10 +41,10 @@ VP1_FE = FE("D2T", FE.repFS("[1,x,y]", [2, 1]), [NdDoF("D2", MshEnt("D2T").msh, 
     NdDoF("D2", MshEnt("D2T").msh, 0, [], d0_uy, "share", false)]);
 VP1_FES = FES(msh, VP1_FE);
 %%
-%[text] 1-dim $P\_1$ element
-%[text] - Element: line segment
+%[text] Trace $P\_1$ element
+%[text] - Element: reference edge \[0, 1\]
 %[text] - Function space: $P\_1$
-%[text] - Nodal DoF: $\\mu |\_c$ at line vertex \
+%[text] - Nodal DoF: $\\hat{\\mu} |\_c$ at edge vertex \
 %[text] Trace $P\_1$ element space
 %[text] - $\\Lambda\_{h, g} = \\{ \\mu \\in L^2 (E\_h) : \\mu |\_e \\in P\_1 (e), \\forall e \\in E\_h; \\ \\mu |\_e = g\_D, \\forall e \\in \\Gamma^D\_h \\}$ \
 d0_l = 0;

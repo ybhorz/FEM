@@ -1,134 +1,108 @@
-%[text] ## Node
-Node(rand([2, 8]))
-Node(rand([2, 8]), zeros(1, 8))
+%[text] # Msh - mesh data structure
 %%
-%[text] ## Elem
-Elem(zeros([3, 8]))
-Elem(zeros([3, 8]), zeros([3, 8]))
-Elem(zeros([3, 8]), zeros([3, 8]), zeros([1, 8]))
-%%
-%[text] ## Edge
-Edge(zeros([2, 8]))
-Edge(zeros([2, 8]), zeros([2, 8]))
-Edge(zeros([2, 8]), zeros([2, 8]), zeros([1, 8]))
-%%
-%[text] ## Msh
-Msh("D2T", Node(zeros(2, 8)), Elem(zeros(3, 8)), Edge(zeros(2, 8)))
-Msh("D2T", Node(zeros(2, 8)), Elem(zeros(3, 8), zeros(3, 8)), Edge(zeros(2, 8), zeros(2, 8)))
-
-Msh("D1", Node(zeros(1, 3)), Elem(zeros(2, 2)))
-%%
-%[text] msh.auto
-msh1 = mshD2TS([0, 1, 3, 4], [2, 3]);
-msh2 = Msh.auto("D2T", msh1.node, msh1.elem.node);
-
-msh2.node.coord
-msh2.node.type
-
-msh2.elem.node
-msh2.elem.edge
-msh2.elem.type
-
-msh2.edge.node
-msh2.edge.elem
-msh2.edge.type
-
-msh2.figure
-%%
-% PDE toolbox.
-NdCrd = p;
-NdType = zeros(1, size(p, 2));
-NdType(unique(e(1:2, e(5, :) == 3))) = 1;
-NdType(unique(e(1:2, e(5, :) == 2))) = 2;
-NdType(unique(e(1:2, e(5, :) == 1))) = 3;
-NdType(unique(e(1:2, e(5, :) == 4))) = 4;
-NdType(4) = -1; NdType(3) = -2; NdType(2) = -3; NdType(1) = -4;
-ElNode = t(1:3,:);
-msh = Msh.auto("D2T", Node(NdCrd, NdType), ElNode);
+%[text] ## D2T mesh
+%[text] ### Node
+node = Node([0, 1; 1, 1; 0, 2; 1, 2]', [-1, -2, -4, -3]);
+disp(node.dim);
+disp(node.nNode);
+%[text] ### Elem
+elem = Elem([2, 3, 1; 3, 2, 4]', [5, -3, 1; -5, 4, -2]', [5, 7]);
+disp(elem.nElem);
+disp(elem.nNode);
+disp(elem.nEdge);
+%[text] ### Edge
+edge = Edge([1, 2; 3, 4; 1, 3; 2, 4; 2, 3]', [1, 0; -2, 0; -1, 0; 2, 0; 1, -2]', [1, 3, 4, 2, 0]);
+disp(edge.nEdge);
+disp(edge.nNode);
+disp(edge.nElem);
+%[text] ### Msh
+msh = Msh("D2T", node, elem, edge);
 msh.figure;
+
+disp(msh.dim);
+
+disp(msh.nNode);
+disp(msh.nElem);
+disp(msh.nEdge);
+
+disp(msh.nEnt(0));
+disp(msh.nEnt(1));
+disp(msh.nEnt(2));
 %%
-%[text] ## mshD2TS
+%[text] ## D1 mesh
+msh1D = Msh("D1", Node([0, 1, 2]), Elem([0, 1; 1, 2]'));
+disp(msh1D.dim);
+
+disp(msh.nNode);
+disp(msh.nElem);
+
+disp(msh1D.nEnt(0));
+disp(msh1D.nEnt(1));
+%%
+%[text] # mshD2TS - structured triangulation of a rectangle
 msh = mshD2TS([0, 1, 3, 4], [2, 3]);
+msh.figure;
 
-msh.node.coord
-msh.node.type
+disp(msh.dim);
 
-msh.elem.node
-msh.elem.edge
-msh.elem.type
+disp(msh.nNode);
+disp(msh.nElem);
+disp(msh.nEdge);
 
-msh.edge.node
-msh.edge.elem
-msh.edge.type
+disp(msh.node.coord);
+disp(msh.node.type);
 
-msh.figure
-%%
-%[text] ## mshSplit
-msh1 = mshD2TS([0, 1, 3, 4], [2, 3]);
-msh2 = mshSplit(msh1);
-msh1.figure;
-msh2.figure
-%%
-%[text] ## MshEnt
-MshEnt
-%%
-MshEnt("D2")
-MshEnt("D2").var
-%%
-MshEnt("D2R")
-MshEnt("D2R").var
-%%
-MshEnt("D2R1")
-MshEnt("D2R1").var
-%%
-MshEnt("D2T")
-MshEnt("D2T").msh
-MshEnt("D2T").node.coord
-MshEnt("D2T").elem.node
-MshEnt("D2T").edge.node
-MshEnt("D2T").var
-MshEnt("D2T").parm
-%%
-MshEnt("D2TR")
-MshEnt("D2TR").msh
-MshEnt("D2TR").node.coord
-MshEnt("D2TR").elem.node
-MshEnt("D2TR").edge.node
-MshEnt("D2TR").var
-MshEnt("D2TR").parm
-%%
-MshEnt("D2L")
-MshEnt("D2L").node.coord
-MshEnt("D2L").edge.node
-MshEnt("D2L").var
-MshEnt("D2L").parm
-%%
-MshEnt("D2LR")
-MshEnt("D2LR").msh
-MshEnt("D2LR").node.coord
-MshEnt("D2LR").elem.node
-MshEnt("D2LR").var
-MshEnt("D2LR").parm
-%%
-%[text] UNV
-MshEnt("D2L").UNV.domn
-MshEnt("D2L").UNV.fun
+disp(msh.elem.node);
+disp(msh.elem.edge);
+disp(msh.elem.type);
 
-MshEnt("D2T").UNV.domn
-MshEnt("D2T").UNV.fun
+disp(msh.edge.node);
+disp(msh.edge.elem);
+disp(msh.edge.type);
 %%
-%[text] UTV
-MshEnt("D2L").UTV.domn
-MshEnt("D2L").UTV.fun
+%[text] # Msh.auto - automatically complete `mesh data`
+msh0 = mshD2TS([0, 1, 3, 4], [2, 3]);
+msh = Msh.auto("D2T", msh0.node, msh0.elem.node);
+msh.figure;
 
-MshEnt("D2T").UTV.domn
-MshEnt("D2T").UTV.fun
+disp(msh.dim);
+
+disp(msh.nNode);
+disp(msh.nElem);
+disp(msh.nEdge);
+
+disp(msh.node.coord);
+disp(msh.node.type);
+
+disp(msh.elem.node);
+disp(msh.elem.edge);
+disp(msh.elem.type);
+
+disp(msh.edge.node);
+disp(msh.edge.elem);
+disp(msh.edge.type);
 %%
-%[text] len
-MshEnt("D2L").len.domn
-MshEnt("D2L").len.fun
-MshEnt("D2T").len.domn
-MshEnt("D2T").len.fun
+%[text] # mshSplit - Alfeld refinement
+msh0 = mshD2TS([0, 1, 3, 4], [2, 3]);
+msh = mshSplit(msh0);
+msh.figure;
+
+disp(msh.dim);
+
+disp(msh.nNode);
+disp(msh.nElem);
+disp(msh.nEdge);
+
+disp(msh.node.coord);
+disp(msh.node.type);
+
+disp(msh.elem.node);
+disp(msh.elem.edge);
+disp(msh.elem.type);
+
+disp(msh.edge.node);
+disp(msh.edge.elem);
+disp(msh.edge.type);
 
 %[appendix]{"version":"1.0"}
 %---
