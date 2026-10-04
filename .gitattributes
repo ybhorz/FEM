@@ -1,0 +1,4 @@
+*.m              text eol=crlf
+FEM_Example/*.m  text eol=lf
+FEM_Test/demo/*.m text eol=lf
+*.mat            binary
