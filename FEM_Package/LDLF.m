@@ -10,7 +10,7 @@ classdef LDLF < DLF
         function LDLF = LDLF(msh, EntDim, coef, preOrd, trlOrd, tstOrd, options)
             arguments
                 msh Msh;
-                EntDim {mustBeMember(EntDim, [1, 2])};
+                EntDim {mustBeMember(EntDim, [1, 2, 3])};
                 coef (1, :) Fcn;
                 preOrd (:, :, :);
                 trlOrd (:, :, :);

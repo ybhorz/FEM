@@ -1,7 +1,8 @@
 classdef Fcn
     % Fcn: function.
     properties
-        domn {mustBeMember(domn, ["VOID", "D2", "D2R", "D2R1", "D2T", "D2TR", "D2L", "D2LR"])} = "VOID"; % Domain.
+        domn {mustBeMember(domn, ["VOID", "D2", "D2R", "D2R1", "D2T", "D2TR", "D2L", "D2LR", ...
+            "D3", "D3R", "D3R2", "D3R1", "D3T", "D3TR", "D3F", "D3FR", "D3L", "D3LR"])} = "VOID"; % Domain.
         % D: dimension.
         % T: triangle.
         % L: line.
@@ -21,7 +22,8 @@ classdef Fcn
         %% Constructor.
         function fcn = Fcn(domn, fun, coef)
             arguments
-                domn {mustBeMember(domn, ["VOID", "D2", "D2R", "D2R1", "D2T", "D2TR", "D2L", "D2LR"])};
+                domn {mustBeMember(domn, ["VOID", "D2", "D2R", "D2R1", "D2T", "D2TR", "D2L", "D2LR", ...
+                    "D3", "D3R", "D3R2", "D3R1", "D3T", "D3TR", "D3F", "D3FR", "D3L", "D3LR"])};
                 fun (:, :) {mustBeA(fun, ["sym", "string"])};
                 coef (:, 1) {mustBeA(coef, ["sym", "string"])} = sym([]);
             end
@@ -73,6 +75,24 @@ classdef Fcn
                 fcn Fcn;
                 options.parm (1, :) cell = {}; % Manually set parameter.
                 options.coef (1, :) cell = {}; % Manually set coefficient.
+                options.vec logical = false; % Batch evaluation over points and mesh entities.
+                % If true, each input argument `arg` (symbolic array with n entries) is given as an n x nPnt x nEnt or
+                % n x 1 x nEnt numeric array, whose first dimension lists the entries of `arg` in column-major order;
+                % e.g. `var` as d x nPnt x nEnt points, a 3 x 4 parameter as 12 x 1 x nEnt.
+                % Output is a 1 x nPnt x nEnt array (n x 1 x nEnt arguments are replicated over points).
+                % Only supported for scalar-valued function.
+                % `fcn` may be an array of functions with the same arguments: output is then nFcn x nPnt x nEnt, and
+                % only one function handle is generated (`matlabFunction` costs about 0.1 s per call).
+            end
+            if options.vec && ~isscalar(fcn)
+                for iFcn = 2:numel(fcn)
+                    assert(isequal(fcn(iFcn).domn, fcn(1).domn) && isequal(fcn(iFcn).coef, fcn(1).coef));
+                end
+                funs = arrayfun(@(f) f.fun, fcn, "UniformOutput", false);
+                fcn = fcn(1);
+            else
+                assert(isscalar(fcn));
+                funs = {fcn.fun};
             end
             argLst = {};
             if ~isempty(fcn.var)
@@ -103,6 +123,21 @@ classdef Fcn
                 if ~isempty(fcn.coef)
                     argLst{end + 1} = fcn.coef;
                 end
+            end
+            if options.vec
+                % Each argument is passed as a column vector: the generated code reads its k-th entry as row `in(k, :)`,
+                % so a batch of values (by column) is evaluated at once.
+                assert(all(cellfun(@isscalar, funs)));
+                nSym = cellfun(@numel, argLst);
+                for i = 1:length(argLst)
+                    if ~iscolumn(argLst{i})
+                        argLst{i} = reshape(argLst{i}, [], 1);
+                    end
+                end
+                % One output per function.
+                vecH = matlabFunction(funs{:}, "Vars", argLst);
+                funH = @(varargin) vecEval(vecH, nSym, numel(funs), varargin);
+                return;
             end
             funH = matlabFunction(fcn.fun, "Vars", argLst);
             if ~isempty(fcn.var) && all(~ismember(fcn.var, symvar(fcn.fun)))
@@ -360,14 +395,22 @@ classdef Fcn
             % D2T      | D2TR
             % D2L      | D2LR
             % D2TR     | D2T
+            % D3       | D3TR D3FR D3LR
+            % D3R      | D3T
+            % D3T      | D3TR
+            % D3F      | D3FR
+            % D3L      | D3LR
+            % D3TR     | D3T
 
             arguments (Input)
                 fcns Fcn;
-                domn {mustBeMember(domn, ["D2T", "D2TR", "D2LR"])}; % Target domain.
+                domn {mustBeMember(domn, ["D2T", "D2TR", "D2LR", "D3T", "D3TR", "D3FR", "D3LR"])}; % Target domain.
             end
             arguments (Output)
                 fcns Fcn;
             end
+            % Transformed functions are plain `Fcn` objects, even if input functions are of a subclass (e.g. `FEF`).
+            tfmFcns = repmat(Fcn.cst(0), size(fcns));
             for iFcn = 1:length(fcns)
                 fcn = fcns(iFcn);
                 switch domn
@@ -383,9 +426,26 @@ classdef Fcn
                         assert(ismember(fcn.domn, ["VOID", "D2", "D2L"]));
                         fcn = fcn.ensDomn("D2");
                         fcn = fcn.compose(Tfm("D2L").orgTfm);
+                    case "D3T"
+                        assert(ismember(fcn.domn, ["VOID", "D3R", "D3TR"]));
+                        fcn = fcn.ensDomn("D3R");
+                        fcn = fcn.compose(Tfm("D3T").refTfm);
+                    case "D3TR"
+                        assert(ismember(fcn.domn, ["VOID", "D3", "D3T"]));
+                        fcn = fcn.ensDomn("D3");
+                        fcn = fcn.compose(Tfm("D3T").orgTfm);
+                    case "D3FR"
+                        assert(ismember(fcn.domn, ["VOID", "D3", "D3F"]));
+                        fcn = fcn.ensDomn("D3");
+                        fcn = fcn.compose(Tfm("D3F").orgTfm);
+                    case "D3LR"
+                        assert(ismember(fcn.domn, ["VOID", "D3", "D3L"]));
+                        fcn = fcn.ensDomn("D3");
+                        fcn = fcn.compose(Tfm("D3L").orgTfm);
                 end
-                fcns(iFcn) = fcn;
+                tfmFcns(iFcn) = fcn;
             end
+            fcns = tfmFcns;
         end
         function fcns = dif(fcns, ord)
             % Fcn.dif: differentiate functions w.r.t. given order.
@@ -473,13 +533,32 @@ classdef Fcn
             % D2TR     | D2TR     | D2TR
             % D2TR     | D2LR     | D2TR
             % D2LR     | D2LR     | D2LR
+            % D3       | D3T      | D3T
+            % D3       | D3F      | D3F
+            % D3       | D3L      | D3L
+            % D3R      | D3TR     | D3R
+            % D3R      | D3FR     | D3R
+            % D3R      | D3LR     | D3R
+            % D3R2     | D3FR     | D3R2
+            % D3R1     | D3LR     | D3R1
+            % D3T      | D3T      | D3T
+            % D3T      | D3F      | D3T
+            % D3T      | D3L      | D3T
+            % D3F      | D3F      | D3F
+            % D3L      | D3L      | D3L
+            % D3TR     | D3TR     | D3TR
+            % D3TR     | D3FR     | D3TR
+            % D3TR     | D3LR     | D3TR
+            % D3FR     | D3FR     | D3FR
+            % D3LR     | D3LR     | D3LR
 
             % Input arguments:
             arguments (Input)
                 fcn Fcn;
-                domn {mustBeMember(domn, ["D2T", "D2TR", "D2L", "D2LR"])}; % Integrated domain.
+                domn {mustBeMember(domn, ["D2T", "D2TR", "D2L", "D2LR", "D3T", "D3TR", "D3F", "D3FR", "D3L", "D3LR"])}; % Integrated domain.
                 idx = []; % When integrating a function over a sub-entity of its original domain, specify the index of the sub-entity.
-                % For example, when integrating a function defined on a triangle over its 2-nd edge, set `idx` to 2.
+                % For example, when integrating a function defined on a triangle over its 2-nd edge, set `idx` to 2;
+                % when integrating a function defined on a tetrahedron over its 3-rd face (edge), set `idx` to 3.
             end
             arguments (Output)
                 intVal Fcn; % Value of integral.
@@ -528,6 +607,85 @@ classdef Fcn
                             JNorm = Tfm("D2L").JNorm.subParm(EgParm);
                             intFcn = fcn.compose(orgTfm) .* JNorm;
                             assert(isequal(MshEnt("D2LR").node.coord, sym([0, 1])));
+                            intVal = Fcn(fcn.domn, int(intFcn.fun, intFcn.var, 0, 1), fcn.coef);
+                    end
+                case "D3T"
+                    assert(ismember(fcn.domn, ["VOID", "D3", "D3T"]));
+                    fcn = fcn.ensDomn("D3");
+                    intFcn = fcn.tfm("D3TR") .* Tfm("D3T").JDet;
+                    assert(isequal(MshEnt("D3TR").node.coord, sym([0, 1, 0, 0; 0, 0, 1, 0; 0, 0, 0, 1])));
+                    intVal = Fcn("D3T", int(int(int(intFcn.fun, intFcn.var(3), 0, 1 - intFcn.var(1) - intFcn.var(2)), ...
+                        intFcn.var(2), 0, 1 - intFcn.var(1)), intFcn.var(1), 0, 1), fcn.coef);
+                case "D3TR"
+                    assert(ismember(fcn.domn, ["VOID", "D3R", "D3TR"]));
+                    fcn = fcn.ensDomn("D3R");
+                    assert(isequal(MshEnt("D3TR").node.coord, sym([0, 1, 0, 0; 0, 0, 1, 0; 0, 0, 0, 1])));
+                    intVal = Fcn(fcn.domn, int(int(int(fcn.fun, fcn.var(3), 0, 1 - fcn.var(1) - fcn.var(2)), ...
+                        fcn.var(2), 0, 1 - fcn.var(1)), fcn.var(1), 0, 1), fcn.coef);
+                case "D3F"
+                    assert(ismember(fcn.domn, ["VOID", "D3", "D3F", "D3T"]));
+                    switch fcn.domn
+                        case {"VOID", "D3", "D3F"}
+                            fcn = fcn.ensDomn("D3");
+                            intFcn = fcn.tfm("D3FR") .* Tfm("D3F").JNorm;
+                            assert(isequal(MshEnt("D3FR").node.coord, sym([0, 1, 0; 0, 0, 1])));
+                            intVal = Fcn("D3F", int(int(intFcn.fun, intFcn.var(2), 0, 1 - intFcn.var(1)), intFcn.var(1), 0, 1), fcn.coef);
+                        case "D3T"
+                            assert(~isempty(idx));
+                            mshEnt = MshEnt("D3T"); FcParm = mshEnt.node.coord(:, mshEnt.face.node(:, idx));
+                            orgTfm = Tfm("D3F").orgTfm.subParm(FcParm);
+                            JNorm = Tfm("D3F").JNorm.subParm(FcParm);
+                            intFcn = fcn.compose(orgTfm) .* JNorm;
+                            assert(isequal(MshEnt("D3FR").node.coord, sym([0, 1, 0; 0, 0, 1])));
+                            intVal = Fcn("D3T", int(int(intFcn.fun, intFcn.var(2), 0, 1 - intFcn.var(1)), intFcn.var(1), 0, 1), fcn.coef);
+                    end
+                case "D3FR"
+                    assert(ismember(fcn.domn, ["VOID", "D3R2", "D3FR", "D3R", "D3TR"]));
+                    switch fcn.domn
+                        case {"VOID", "D3R2", "D3FR"}
+                            fcn = fcn.ensDomn("D3R2");
+                            assert(isequal(MshEnt("D3FR").node.coord, sym([0, 1, 0; 0, 0, 1])));
+                            intVal = Fcn(fcn.domn, int(int(fcn.fun, fcn.var(2), 0, 1 - fcn.var(1)), fcn.var(1), 0, 1), fcn.coef);
+                        case {"D3R", "D3TR"}
+                            assert(~isempty(idx));
+                            mshEnt = MshEnt("D3TR"); FcParm = mshEnt.node.coord(:, mshEnt.face.node(:, idx));
+                            orgTfm = Tfm("D3F").orgTfm.subParm(FcParm);
+                            JNorm = Tfm("D3F").JNorm.subParm(FcParm);
+                            intFcn = fcn.compose(orgTfm) .* JNorm;
+                            assert(isequal(MshEnt("D3FR").node.coord, sym([0, 1, 0; 0, 0, 1])));
+                            intVal = Fcn(fcn.domn, int(int(intFcn.fun, intFcn.var(2), 0, 1 - intFcn.var(1)), intFcn.var(1), 0, 1), fcn.coef);
+                    end
+                case "D3L"
+                    assert(ismember(fcn.domn, ["VOID", "D3", "D3L", "D3T"]));
+                    switch fcn.domn
+                        case {"VOID", "D3", "D3L"}
+                            fcn = fcn.ensDomn("D3");
+                            intFcn = fcn.tfm("D3LR") .* Tfm("D3L").JNorm;
+                            assert(isequal(MshEnt("D3LR").node.coord, sym([0, 1])));
+                            intVal = Fcn("D3L", int(intFcn.fun, intFcn.var, 0, 1), fcn.coef);
+                        case "D3T"
+                            assert(~isempty(idx));
+                            mshEnt = MshEnt("D3T"); EgParm = mshEnt.node.coord(:, mshEnt.edge.node(:, idx));
+                            orgTfm = Tfm("D3L").orgTfm.subParm(EgParm);
+                            JNorm = Tfm("D3L").JNorm.subParm(EgParm);
+                            intFcn = fcn.compose(orgTfm) .* JNorm;
+                            assert(isequal(MshEnt("D3LR").node.coord, sym([0, 1])));
+                            intVal = Fcn("D3T", int(intFcn.fun, intFcn.var, 0, 1), fcn.coef);
+                    end
+                case "D3LR"
+                    assert(ismember(fcn.domn, ["VOID", "D3R1", "D3LR", "D3R", "D3TR"]));
+                    switch fcn.domn
+                        case {"VOID", "D3R1", "D3LR"}
+                            fcn = fcn.ensDomn("D3R1");
+                            assert(isequal(MshEnt("D3LR").node.coord, sym([0, 1])));
+                            intVal = Fcn(fcn.domn, int(fcn.fun, fcn.var, 0, 1), fcn.coef);
+                        case {"D3R", "D3TR"}
+                            assert(~isempty(idx));
+                            mshEnt = MshEnt("D3TR"); EgParm = mshEnt.node.coord(:, mshEnt.edge.node(:, idx));
+                            orgTfm = Tfm("D3L").orgTfm.subParm(EgParm);
+                            JNorm = Tfm("D3L").JNorm.subParm(EgParm);
+                            intFcn = fcn.compose(orgTfm) .* JNorm;
+                            assert(isequal(MshEnt("D3LR").node.coord, sym([0, 1])));
                             intVal = Fcn(fcn.domn, int(intFcn.fun, intFcn.var, 0, 1), fcn.coef);
                     end
             end
@@ -581,16 +739,7 @@ classdef Fcn
             arguments (Output)
                 fcn Fcn;
             end
-            switch fcn.domn
-                case {"D2", "D2T", "D2L"}
-                    fcn.domn = "D2";
-                case {"D2R", "D2TR"}
-                    fcn.domn = "D2R";
-                case {"D2R1", "D2LR"}
-                    fcn.domn = "D2R1";
-                otherwise
-                    fcn.domn = "VOID";
-            end
+            fcn.domn = MshEnt.getInfo(fcn.domn).free;
         end
         function fcn = clrCoef(fcn)
             % Fcn.clrCoef: clear coefficient.
@@ -628,6 +777,29 @@ classdef Fcn
     end
 end
 %% Local functions.
+function val = vecEval(vecH, nSym, nFun, args)
+    % vecEval: evaluate function handle generated with column-vector arguments on batched arguments
+    % (see `Fcn.getFun` with "vec"): each argument n x nPnt x nEnt or n x 1 x nEnt, output nFun x nPnt x nEnt.
+    assert(length(args) == length(nSym));
+    nPnt = max(cellfun(@(arg) size(arg, 2), args));
+    nEnt = max(cellfun(@(arg) size(arg, 3), args));
+    inp = cell(1, length(args));
+    for iArg = 1:length(args)
+        arg = args{iArg};
+        assert(size(arg, 1) == nSym(iArg));
+        if size(arg, 2) < nPnt
+            arg = repmat(arg, 1, nPnt / size(arg, 2), 1);
+        end
+        inp{iArg} = reshape(arg, nSym(iArg), nPnt * nEnt);
+    end
+    out = cell(1, nFun);
+    [out{:}] = vecH(inp{:});
+    val = zeros(nFun, nPnt * nEnt);
+    for iFun = 1:nFun
+        val(iFun, :) = out{iFun};
+    end
+    val = reshape(val, nFun, nPnt, nEnt);
+end
 function fcn = mrgFcn(fcn1, fcn2, varargin)
     % mrgFcn: merge functions.
     % varargin: names of properties to be merged.

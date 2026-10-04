@@ -52,12 +52,15 @@ TP1_FE = FE("D2LR", "[1,s]", NdDoF("D2R1", MshEnt("D2LR").msh, 1, [0, 1], d0_l, 
 TP1_BC = BC(g_D, "edge", DirEdge);
 TP1_FES = FES(msh, TP1_FE, TP1_BC);
 %%
-%[text] HDG scheme: find $u\_h \\in U\_h$, $p\_h \\in P\_h$ and $\\Lambda\_{h, g}$ such that
-%[text] $\\begin{cases}\n  \\int\_\\Omega u\_h \\cdot v\_h \\, dx \\, dy + \\sum\_{K \\in T\_h} \\int\_K p\_h \\nabla \\cdot v\_h \\, dx \\, dy - \\sum\_{e \\in E\_h} \\int\_e \\lambda\_h \[v\_h \\cdot n\] \\, ds = 0, & \\forall v\_h \\in U\_h \\\\\n  \\sum\_{K \\in T\_h} \\int\_K u\_h \\nabla q\_h \\, dx \\, dy - \\sum\_{e \\in E\_h} \\int\_e (u\_h \\cdot n + \\tau (p\_h - \\lambda\_h)) \[q\_h\] \\, ds  = \\int\_\\Omega f q\_h \\, dx \\, dy, & \\forall q\_h \\in P\_h \\\\\n  \\sum\_{e \\in E\_h} \\int\_e \[u\_h \\cdot n + \\tau (p\_h - \\lambda\_h)\] \\mu\_h \\,ds = \\sum\_{e \\in \\Gamma^N\_h} \\int\_e g\_N \\mu\_h \\, ds, & \\forall \\mu\_h \\in \\Lambda\_{h, 0}\n\\end{cases}$
+%[text] HDG scheme: find $u\_h \\in U\_h$, $p\_h \\in P\_h$ and $\\lambda\_h \\in \\Lambda\_{h, g}$ such that
+%[text] $\\begin{cases}\n  \\int\_\\Omega u\_h \\cdot v\_h \\, dx \\, dy + \\sum\_{K \\in T\_h} \\int\_K p\_h \\nabla \\cdot v\_h \\, dx \\, dy - \\sum\_{K \\in T\_h} \\int\_{\\partial K} \\lambda\_h v\_h \\cdot n\_K \\, ds = 0, & \\forall v\_h \\in U\_h \\\\\n  \\sum\_{K \\in T\_h} \\int\_K u\_h \\cdot \\nabla q\_h \\, dx \\, dy - \\sum\_{K \\in T\_h} \\int\_{\\partial K} \\hat{u}\_h \\cdot n\_K \\, q\_h \\, ds  = \\int\_\\Omega f q\_h \\, dx \\, dy, & \\forall q\_h \\in P\_h \\\\\n  \\sum\_{K \\in T\_h} \\int\_{\\partial K} \\hat{u}\_h \\cdot n\_K \\, \\mu\_h \\,ds = \\sum\_{e \\in \\Gamma^N\_h} \\int\_e g\_N \\mu\_h \\, ds, & \\forall \\mu\_h \\in \\Lambda\_{h, 0}\n\\end{cases}$
+%[text] Numerical flux on each element: $\\hat{u}\_h \\cdot n\_K = u\_h|\_K \\cdot n\_K - \\tau (p\_h|\_K - \\lambda\_h)$ ($\\tau > 0$; minus sign because $u = \\nabla p$).
+%[text] On an edge with positive and negative elements, $n\_K = n$ and $-n$ respectively: sign of `iTrl / iTst` selects the side.
 tau = 1;
 Uh = VP1_FES; ord_Uh = 1;
 Ph = SP1_FES; ord_Ph = 1;
 Lh = TP1_FES; ord_Lh = 1;
+IntEdge = find(msh.edge.type == 0);
 
 trls = [Uh, Ph, Lh]; tsts = [Uh, Ph, Lh];
 iu = 1; ip = 2; il = 3; iv = 1; iq = 2; im = 3;
@@ -68,14 +71,20 @@ Bpv = DLF(msh, 2, Fcn.cst(1), d0_p, div_v, "iTrl", ip, "iTst", iv, "GInt", GInt(
 Blv = DLF.interface(msh, 1, -UNV, d0_l, d0_v, "iTrl", il, "iTst", iv, "tstOpr", "jump", "GInt", GInt("D2L",ord_Lh + ord_Uh));
 
 Buq = [DLF(msh, 2, Fcn.cst(1), d0_u, grad_q, "iTrl", iu, "iTst", iq, "GInt", GInt("D2T", ord_Uh + ord_Ph - 1)), ...
-    DLF.interface(msh, 1, -UNV, d0_u, d0_q, "iTrl", iu, "iTst", iq, "tstOpr", "jump", "GInt", GInt("D2L",ord_Uh + ord_Ph))];
-Apq = DLF.interface(msh, 1, Fcn.cst(-tau), d0_p, d0_q, "iTrl", ip, "iTst", iq, "tstOpr", "jump", "GInt", GInt("D2L", ord_Ph *2));
-Blq = DLF.interface(msh, 1, Fcn.cst(tau), d0_l, d0_q, "iTrl", il, "iTst", iq, "tstOpr", "jump", "GInt", GInt("D2L", ord_Lh + ord_Ph));
+    DLF(msh, 1, -UNV, d0_u, d0_q, "iTrl", iu, "iTst", iq, "GInt", GInt("D2L", ord_Uh + ord_Ph)), ...
+    DLF(msh, 1, UNV, d0_u, d0_q, "iTrl", -iu, "iTst", -iq, "GInt", GInt("D2L", ord_Uh + ord_Ph))];
+Apq = [DLF(msh, 1, Fcn.cst(tau), d0_p, d0_q, "iTrl", ip, "iTst", iq, "GInt", GInt("D2L", ord_Ph * 2)), ...
+    DLF(msh, 1, Fcn.cst(tau), d0_p, d0_q, "iTrl", -ip, "iTst", -iq, "GInt", GInt("D2L", ord_Ph * 2))];
+Blq = [DLF(msh, 1, Fcn.cst(-tau), d0_l, d0_q, "iTrl", il, "iTst", iq, "GInt", GInt("D2L", ord_Lh + ord_Ph)), ...
+    DLF(msh, 1, Fcn.cst(-tau), d0_l, d0_q, "iTrl", il, "iTst", -iq, "GInt", GInt("D2L", ord_Lh + ord_Ph))];
 Fq = SLF(msh, 2, f, d0_q, "iTst", iq, "GInt", GInt("D2T", 1 + ord_Ph));
 
 Bum = DLF.interface(msh, 1, UNV, d0_u, d0_m, "iTrl", iu, "iTst", im, "trlOpr", "jump", "GInt", GInt("D2L", ord_Uh + ord_Lh));
-Bpm = DLF.interface(msh, 1, Fcn.cst(tau), d0_p, d0_m, "iTrl", ip, "iTst", im, "trlOpr", "jump", "GInt", GInt("D2L", ord_Ph + ord_Lh));
-Alm = DLF(msh, 1, -Fcn.cst(tau), d0_l, d0_m, "iTrl", il, "iTst", im, "EntIdx", NeuEdge, "GInt", GInt("D2L", ord_Lh * 2));
+Bpm = [DLF(msh, 1, Fcn.cst(-tau), d0_p, d0_m, "iTrl", ip, "iTst", im, "GInt", GInt("D2L", ord_Ph + ord_Lh)), ...
+    DLF(msh, 1, Fcn.cst(-tau), d0_p, d0_m, "iTrl", -ip, "iTst", im, "GInt", GInt("D2L", ord_Ph + ord_Lh))];
+% Number of elements sharing the edge: 1 on boundary, 2 in interior.
+Alm = [DLF(msh, 1, Fcn.cst(tau), d0_l, d0_m, "iTrl", il, "iTst", im, "EntIdx", NeuEdge, "GInt", GInt("D2L", ord_Lh * 2)), ...
+    DLF(msh, 1, Fcn.cst(2 * tau), d0_l, d0_m, "iTrl", il, "iTst", im, "EntIdx", IntEdge, "GInt", GInt("D2L", ord_Lh * 2))];
 Gm = SLF(msh, 1, g_N, d0_m, "iTst", im,"EntIdx", NeuEdge, "GInt", GInt("D2L", 1 + ord_Lh));
 %%
 %[text] Solution

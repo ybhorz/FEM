@@ -10,16 +10,24 @@ classdef NdDoF < DoF
     % D2     | D2T      | 2      | D2 D2T    | D2 D2T
     % D2R1   | D1       | 1      | D2R1      | D2R1
     % D2R1   | D2T      | 1      | D2R1      | D2 D2L
+    % D3     | D3T      | 0      | D3        | D3
+    % D3     | D3T      | 1      | D3 D3L    | D3 D3L
+    % D3     | D3T      | 2      | D3 D3F    | D3 D3F
+    % D3     | D3T      | 3      | D3 D3T    | D3 D3T
+    % D3R2   | D2T      | 2      | D3R2      | D3R2
+    % D3R2   | D3T      | 2      | D3R2      | D3 D3F
 
     properties
         coord (:, :) sym; % Relative coordinates of sample node in mesh entity (by column).
         % EntDim = 0: no relative coordinate is required.
         % EntDim = 1: use 1D coordinate `a` where the node is computed as (1 - a) * vertex_1 + a * vertex_2.
         % EntDim = 2: use 2D coordinates (a; b) where the node is computed as (1 - a - b) * vertex_1 + a * vertex_2 + b * vertex_3.
-        % Remark: when `domn` is "D2", `msh.type` is "D2T" and `EntDim` is 1, nodes must distribute symmetrically, e.g. coord = [1/3, 1/2 ,2/3].
+        % EntDim = 3: use 3D coordinates (a; b; c) where the node is computed as
+        % (1 - a - b - c) * vertex_1 + a * vertex_2 + b * vertex_3 + c * vertex_4.
+        % Remark: when `domn` is "D2" or "D3" and `EntDim` is 1, nodes must distribute symmetrically, e.g. coord = [1/3, 1/2 ,2/3].
         ord (:, :); % Order of derivative.
         % ord(i,j) = k: k-th derivative of j-th function component w.r.t. i-th variable.
-        % Remark: when `domn` is "D2R1", only zero order of derivative is supported.
+        % Remark: when `domn` is "D2R1" or "D3R2", only zero order of derivative is supported.
         coef (1, :) Fcn; % Coefficient function.
         form; % Form of DoF: function handle of `coef` and `fcn`.
     end
@@ -30,7 +38,7 @@ classdef NdDoF < DoF
         nDoF; % Number of degrees of freedom.
         sDoF; % Size of DoF group: [nEnt, nNode].
         loc (2, :); % Geometry location of sample node in mesh entity (by column).
-        % Only supported for `EntDim` = 2.
+        % Only supported for `domn` = "D2" and `EntDim` = 2.
         % - loc(1,j) = 0, loc(2,j) = k: j-th node is at k-th vertex of mesh entity.
         % - loc(1,j) = 1, loc(2,j) = k: j-th node is at k-th edge of mesh entity.
         LFun; % Length of function value.
@@ -39,9 +47,9 @@ classdef NdDoF < DoF
         %% Constructor.
         function NdDoF = NdDoF(domn, msh, EntDim, coord, ord, options)
             arguments
-                domn {mustBeMember(domn, ["D2", "D2R1"])};
+                domn {mustBeMember(domn, ["D2", "D2R1", "D3", "D3R2"])};
                 msh Msh;
-                EntDim {mustBeMember(EntDim, [0, 1, 2])};
+                EntDim {mustBeMember(EntDim, [0, 1, 2, 3])};
                 coord (:, :) {mustBeA(coord, ["sym", "string", "double"])};
                 ord (:, :);
                 options.EntIdx (1, :) = [];
@@ -70,7 +78,8 @@ classdef NdDoF < DoF
             if ~isempty(options.share)
                 NdDoF.share = options.share;
             else
-                if isequal(domn, "D2") && ismember(EntDim, [0, 1])
+                if ismember(domn, ["D2", "D3"]) && EntDim < msh.dim
+                    % DoFs on vertices, edges (and faces in 3D) are shared by default.
                     NdDoF.share = true;
                 else
                     NdDoF.share = false;
@@ -101,7 +110,7 @@ classdef NdDoF < DoF
             sDoF = [NdDoF.nEnt, NdDoF.nNode];
         end
         function loc = get.loc(NdDoF)
-            assert(NdDoF.EntDim == 2);
+            assert(isequal(NdDoF.domn, "D2") && NdDoF.EntDim == 2);
             loc = zeros(2, NdDoF.nNode);
             loc(1, :) = 2;
             loc(2, :) = 1;
@@ -149,6 +158,10 @@ classdef NdDoF < DoF
                         ndDoF.ord = zeros(2, fcn.nFun);
                     case "D2R1"
                         ndDoF.ord = zeros(1, fcn.nFun);
+                    case "D3"
+                        ndDoF.ord = zeros(3, fcn.nFun);
+                    case "D3R2"
+                        ndDoF.ord = zeros(2, fcn.nFun);
                 end
                 ndDoF.coef = Fcn.cst(1);
                 ndDoF.form = @(coef, fcn) sum(coef .* fcn);
@@ -163,72 +176,81 @@ classdef NdDoF < DoF
                     val = zeros(ndDoF.nEnt, ndDoF.nNode);
             end
             switch ndDoF.domn
-                case "D2"
+                case {"D2", "D3"}
                     switch ndDoF.EntDim
                         case 0
                             fun = ndDoF.form(ndDoF.coef, fcn.dif(ndDoF.ord)).getFun;
                             node = ndDoF.msh.node.coord(:, ndDoF.EntIdx);
                             val(:) = fun(node);
-                        case 1
+                        otherwise
                             fcn = ndDoF.form(ndDoF.coef, fcn.dif(ndDoF.ord));
-                            fun = fcn.getFun;
-                            for iEnt = 1:ndDoF.nEnt
-                                iEdge = ndDoF.EntIdx(iEnt);
-                                EgNd1 = ndDoF.msh.node.coord(:, ndDoF.msh.edge.node(1, iEdge));
-                                EgNd2 = ndDoF.msh.node.coord(:, ndDoF.msh.edge.node(2, iEdge));
-                                a = DoFCrd;
-                                node = (1 - a) .* EgNd1 + a .* EgNd2;
-                                switch fcn.domn
-                                    case "D2"
-                                        val(iEnt, :) = fun(node);
-                                    case "D2L"
-                                        EgParm = [EgNd1, EgNd2];
-                                        val(iEnt, :) = fun(node, EgParm);
+                            EntNode = ndDoF.msh.ent(ndDoF.EntDim).node;
+                            if isequal(options.valType, "num")
+                                % Evaluate on all mesh entities at once.
+                                nEnt = ndDoF.nEnt;
+                                if nEnt == 0
+                                    return;
                                 end
+                                EntParm = reshape(ndDoF.msh.node.coord(:, EntNode(:, ndDoF.EntIdx)), ndDoF.msh.dim, size(EntNode, 1), nEnt);
+                                node = pagemtimes(EntParm, [1 - sum(DoFCrd, 1); DoFCrd]);
+                                fun = fcn.getFun("vec", true);
+                                if ismember(fcn.domn, ["D2", "D3"])
+                                    F = fun(node);
+                                else
+                                    F = fun(node, reshape(EntParm, [], 1, nEnt));
+                                end
+                                val = reshape(F + zeros(1, ndDoF.nNode, nEnt), ndDoF.nNode, nEnt).';
+                                return;
                             end
-                        case 2
-                            fcn = ndDoF.form(ndDoF.coef, fcn.dif(ndDoF.ord));
                             fun = fcn.getFun;
                             for iEnt = 1:ndDoF.nEnt
-                                iElem = ndDoF.EntIdx(iEnt);
-                                ElNd1 = ndDoF.msh.node.coord(:, ndDoF.msh.elem.node(1, iElem));
-                                ElNd2 = ndDoF.msh.node.coord(:, ndDoF.msh.elem.node(2, iElem));
-                                ElNd3 = ndDoF.msh.node.coord(:, ndDoF.msh.elem.node(3, iElem));
-                                a = DoFCrd(1, :);
-                                b = DoFCrd(2, :);
-                                node = (1 - a - b) .* ElNd1 + a .* ElNd2 + b .* ElNd3;
-                                switch fcn.domn
-                                    case "D2"
-                                        val(iEnt, :) = fun(node);
-                                    case "D2T"
-                                        ElParm = [ElNd1, ElNd2, ElNd3];
-                                        val(iEnt, :) = fun(node, ElParm);
+                                EntParm = ndDoF.msh.node.coord(:, EntNode(:, ndDoF.EntIdx(iEnt)));
+                                node = barNode(EntParm, DoFCrd);
+                                if ismember(fcn.domn, ["D2", "D3"])
+                                    val(iEnt, :) = fun(node);
+                                else
+                                    % Function defined on mesh entity, e.g. "D2L", "D3F".
+                                    val(iEnt, :) = fun(node, EntParm);
                                 end
                             end
                     end
-                case "D2R1"
-                    switch ndDoF.msh.type
-                        case "D1"
-                            fun = ndDoF.form(ndDoF.coef, fcn.dif(ndDoF.ord)).getFun;
-                            for iEnt = 1:ndDoF.nEnt
-                                iElem = ndDoF.EntIdx(iEnt);
-                                ElNd1 = ndDoF.msh.node.coord(:, ndDoF.msh.elem.node(1, iElem));
-                                ElNd2 = ndDoF.msh.node.coord(:, ndDoF.msh.elem.node(2, iElem));
-                                a = DoFCrd;
-                                node = (1 - a) .* ElNd1 + a .* ElNd2;
-                                val(iEnt, :) = fun(node);
-                            end
-                        case "D2T"
-                            fun = ndDoF.form(ndDoF.coef, fcn.tfm("D2LR").dif(ndDoF.ord)).getFun;
-                            ElNd1 = MshEnt("D2LR").node.coord(:, 1);
-                            ElNd2 = MshEnt("D2LR").node.coord(:, 2);
-                            a = DoFCrd;
-                            node = (1 - a) .* ElNd1 + a .* ElNd2;
-                            for iEnt = 1:ndDoF.nEnt
-                                iEdge = ndDoF.EntIdx(iEnt);
-                                EgParm = ndDoF.msh.node.coord(:, ndDoF.msh.edge.node(:, iEdge));
-                                val(iEnt, :) = fun(node, EgParm);
-                            end
+                case {"D2R1", "D3R2"}
+                    % Trace function on reference facet, e.g. "D2LR", "D3FR".
+                    RefDomn = trcRefDomn(ndDoF.domn);
+                    EntNode = ndDoF.msh.ent(ndDoF.EntDim).node;
+                    if isequal(options.valType, "num")
+                        % Evaluate on all mesh entities at once.
+                        nEnt = ndDoF.nEnt;
+                        if nEnt == 0
+                            return;
+                        end
+                        EntParm = reshape(double(ndDoF.msh.node.coord(:, EntNode(:, ndDoF.EntIdx))), ndDoF.msh.dim, size(EntNode, 1), nEnt);
+                        if ndDoF.msh.dim == MshEnt(RefDomn).dim
+                            fun = ndDoF.form(ndDoF.coef, fcn.dif(ndDoF.ord)).getFun("vec", true);
+                            F = fun(pagemtimes(EntParm, [1 - sum(DoFCrd, 1); DoFCrd]));
+                        else
+                            fun = ndDoF.form(ndDoF.coef, fcn.tfm(RefDomn).dif(ndDoF.ord)).getFun("vec", true);
+                            node = barNode(double(MshEnt(RefDomn).node.coord), DoFCrd);
+                            F = fun(repmat(node, 1, 1, nEnt), reshape(EntParm, [], 1, nEnt));
+                        end
+                        val = reshape(F + zeros(1, ndDoF.nNode, nEnt), ndDoF.nNode, nEnt).';
+                        return;
+                    end
+                    if ndDoF.msh.dim == MshEnt(RefDomn).dim
+                        % Mesh of reference facet itself.
+                        fun = ndDoF.form(ndDoF.coef, fcn.dif(ndDoF.ord)).getFun;
+                        for iEnt = 1:ndDoF.nEnt
+                            node = barNode(ndDoF.msh.node.coord(:, EntNode(:, ndDoF.EntIdx(iEnt))), DoFCrd);
+                            val(iEnt, :) = fun(node);
+                        end
+                    else
+                        % Facets of mesh: sample function transformed to reference facet, parameterized by facet vertices.
+                        fun = ndDoF.form(ndDoF.coef, fcn.tfm(RefDomn).dif(ndDoF.ord)).getFun;
+                        node = barNode(MshEnt(RefDomn).node.coord, DoFCrd);
+                        for iEnt = 1:ndDoF.nEnt
+                            FtParm = ndDoF.msh.node.coord(:, EntNode(:, ndDoF.EntIdx(iEnt)));
+                            val(iEnt, :) = fun(node, FtParm);
+                        end
                     end
             end
             if isequal(options.valType, "sym")
@@ -245,21 +267,26 @@ function checkProp(domn, mshType, EntDim, coord, ord, share, orien, coef)
             assert(ismember(mshType, "D2T"));
         case "D2R1"
             assert(ismember(mshType, ["D1", "D2T"]));
+        case "D3"
+            assert(ismember(mshType, "D3T"));
+        case "D3R2"
+            assert(ismember(mshType, ["D2T", "D3T"]));
     end
     switch domn
         case "D2"
             assert(ismember(EntDim, [0, 1, 2]));
         case "D2R1"
             assert(ismember(EntDim, 1));
+        case "D3"
+            assert(ismember(EntDim, [0, 1, 2, 3]));
+        case "D3R2"
+            assert(ismember(EntDim, 2));
     end
     assert(size(coord, 1) == EntDim);
-    switch EntDim
-        case 1
-            assert(all(coord >= 0) && all(coord <= 1));
-        case 2
-            assert(all(coord(1, :) >= 0) && all(coord(2, :) >= 0) && all(sum(coord, 1) <= 1));
+    if EntDim >= 1
+        assert(all(coord(:) >= 0) && all(sum(coord, 1) <= 1));
     end
-    if isequal(domn, "D2") && ismember(mshType, "D2T") && EntDim == 1
+    if ismember(domn, ["D2", "D3"]) && EntDim == 1
         assert(all(abs(coord - (1 - coord(end:-1:1))) < 10 * eps));
     end
     switch domn
@@ -268,6 +295,11 @@ function checkProp(domn, mshType, EntDim, coord, ord, share, orien, coef)
         case "D2R1"
             assert(size(ord, 1) == 1);
             assert(all(ord == 0));
+        case "D3"
+            assert(size(ord, 1) == 3);
+        case "D3R2"
+            assert(size(ord, 1) == 2);
+            assert(all(ord == 0, "all"));
     end
     if ~isempty(share)
         switch domn
@@ -280,6 +312,15 @@ function checkProp(domn, mshType, EntDim, coord, ord, share, orien, coef)
                 end
             case "D2R1"
                 assert(ismember(share, false));
+            case "D3"
+                switch EntDim
+                    case {0, 1, 2}
+                        assert(ismember(share, [true, false]));
+                    case 3
+                        assert(ismember(share, false));
+                end
+            case "D3R2"
+                assert(ismember(share, false));
         end
     end
     switch domn
@@ -291,6 +332,15 @@ function checkProp(domn, mshType, EntDim, coord, ord, share, orien, coef)
                     assert(ismember(orien, [true, false]));
             end
         case "D2R1"
+            assert(ismember(orien, false));
+        case "D3"
+            switch EntDim
+                case {0, 3}
+                    assert(ismember(orien, false));
+                case {1, 2}
+                    assert(ismember(orien, [true, false]));
+            end
+        case "D3R2"
             assert(ismember(orien, false));
     end
     switch domn
@@ -305,6 +355,19 @@ function checkProp(domn, mshType, EntDim, coord, ord, share, orien, coef)
             end
         case "D2R1"
             assert(ismember(coef.getDomn, ["VOID", "D2R1"]));
+        case "D3"
+            switch EntDim
+                case 0
+                    assert(ismember(coef.getDomn, ["VOID", "D3"]));
+                case 1
+                    assert(ismember(coef.getDomn, ["VOID", "D3", "D3L"]));
+                case 2
+                    assert(ismember(coef.getDomn, ["VOID", "D3", "D3F"]));
+                case 3
+                    assert(ismember(coef.getDomn, ["VOID", "D3", "D3T"]));
+            end
+        case "D3R2"
+            assert(ismember(coef.getDomn, ["VOID", "D3R2"]));
     end
 end
 function checkFcn(domn, mshType, EntDim, ord, fcn)
@@ -326,6 +389,38 @@ function checkFcn(domn, mshType, EntDim, ord, fcn)
                 case "D2T"
                     assert(ismember(fcn.domn, ["D2", "D2L"]));
             end
+        case "D3"
+            switch EntDim
+                case 0
+                    assert(ismember(fcn.domn, "D3"));
+                case 1
+                    assert(ismember(fcn.domn, ["D3", "D3L"]));
+                case 2
+                    assert(ismember(fcn.domn, ["D3", "D3F"]));
+                case 3
+                    assert(ismember(fcn.domn, ["D3", "D3T"]));
+            end
+        case "D3R2"
+            switch mshType
+                case "D2T"
+                    assert(ismember(fcn.domn, "D3R2"));
+                case "D3T"
+                    assert(ismember(fcn.domn, ["D3", "D3F"]));
+            end
     end
     assert(fcn.nFun == size(ord, 2));
+end
+function RefDomn = trcRefDomn(domn)
+    % trcRefDomn: reference facet of trace function domain.
+    switch domn
+        case "D2R1"
+            RefDomn = "D2LR";
+        case "D3R2"
+            RefDomn = "D3FR";
+    end
+end
+function node = barNode(EntParm, DoFCrd)
+    % barNode: compute sample nodes from vertices of mesh entity and relative coordinates (by column).
+    % node(:,j) = (1 - sum(DoFCrd(:,j))) * EntParm(:,1) + EntParm(:,2:end) * DoFCrd(:,j).
+    node = EntParm * [1 - sum(DoFCrd, 1); DoFCrd];
 end

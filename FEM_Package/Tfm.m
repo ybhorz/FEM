@@ -1,9 +1,10 @@
 classdef Tfm
     % Tfm: transformation between original and reference domain.
     properties
-        domn {mustBeMember(domn, ["VOID", "D2T", "D2L"])} = "VOID"; % Domain of transformation.
+        domn {mustBeMember(domn, ["VOID", "D2T", "D2L", "D3T", "D3F", "D3L"])} = "VOID"; % Domain of transformation.
         % D: dimension.
-        % T: triangle.
+        % T: triangle (2D), tetrahedron (3D).
+        % F: face.
         % L: line.
         orgVar (:, 1) sym; % Original variable.
         refVar (:, 1) sym; % Reference variable.
@@ -20,7 +21,7 @@ classdef Tfm
         % Constructor.
         function tfm = Tfm(domn)
             arguments
-                domn {mustBeMember(domn, ["D2T", "D2L"])};
+                domn {mustBeMember(domn, ["D2T", "D2L", "D3T", "D3F", "D3L"])};
             end
             tfm.domn = domn;
             tfm.orgVar = MshEnt(domn).var;
@@ -36,6 +37,18 @@ classdef Tfm
                 case "D2L"
                     assert(isequal(MshEnt(dual(domn)).node.coord, sym([0, 1])));
                     tfm.toOrg = (parm(:, 2) - parm(:, 1)) * tfm.refVar + parm(:, 1);
+                case "D3T"
+                    assert(isequal(MshEnt(dual(domn)).node.coord, sym([0, 1, 0, 0; 0, 0, 1, 0; 0, 0, 0, 1])));
+                    B = parm(:, 2:4) - parm(:, 1);
+                    b = parm(:, 1);
+                    tfm.toOrg = B * tfm.refVar + b;
+                    tfm.toRef = B \ (tfm.orgVar - b);
+                case "D3F"
+                    assert(isequal(MshEnt(dual(domn)).node.coord, sym([0, 1, 0; 0, 0, 1])));
+                    tfm.toOrg = (parm(:, 2:3) - parm(:, 1)) * tfm.refVar + parm(:, 1);
+                case "D3L"
+                    assert(isequal(MshEnt(dual(domn)).node.coord, sym([0, 1])));
+                    tfm.toOrg = (parm(:, 2) - parm(:, 1)) * tfm.refVar + parm(:, 1);
             end
         end
         % Get functions.
@@ -43,8 +56,9 @@ classdef Tfm
             JDet = Fcn(dual(tfm.domn), det(jacobian(tfm.toOrg, tfm.refVar)));
         end
         function JNorm = get.JNorm(tfm)
-            % JNorm = Fcn(dual(tfm.domn), norm(jacobian(tfm.toOrg, tfm.refVar)));
-            JNorm = Fcn(dual(tfm.domn), sqrt(sum(jacobian(tfm.toOrg, tfm.refVar).^2)));
+            % Measure of line or face: square root of Gram determinant sqrt(det(J.' * J)).
+            J = jacobian(tfm.toOrg, tfm.refVar);
+            JNorm = Fcn(dual(tfm.domn), sqrt(det(J.' * J)));
         end
         function refTfm = get.refTfm(tfm)
             refTfm = Fcn(tfm.domn, tfm.toRef);

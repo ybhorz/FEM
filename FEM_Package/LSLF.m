@@ -10,7 +10,7 @@ classdef LSLF < SLF
         function LSLF = LSLF(msh, EntDim, load, preOrd, tstOrd, options)
             arguments
                 msh Msh;
-                EntDim {mustBeMember(EntDim, [1, 2])};
+                EntDim {mustBeMember(EntDim, [1, 2, 3])};
                 load (1, :) Fcn;
                 preOrd (:, :, :);
                 tstOrd (:, :, :);

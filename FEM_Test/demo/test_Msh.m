@@ -6,12 +6,12 @@ node = Node([0, 1; 1, 1; 0, 2; 1, 2]', [-1, -2, -4, -3]);
 disp(node.dim);
 disp(node.nNode);
 %[text] ### Elem
-elem = Elem([2, 3, 1; 3, 2, 4]', [5, -3, 1; -5, 4, -2]', [5, 7]);
+elem = Elem([2, 3, 1; 3, 2, 4]', [5, 3, 1; -5, 4, 2]', [5, 7]);
 disp(elem.nElem);
 disp(elem.nNode);
 disp(elem.nEdge);
 %[text] ### Edge
-edge = Edge([1, 2; 3, 4; 1, 3; 2, 4; 2, 3]', [1, 0; -2, 0; -1, 0; 2, 0; 1, -2]', [1, 3, 4, 2, 0]);
+edge = Edge([1, 2; 4, 3; 3, 1; 2, 4; 2, 3]', [1, 0; 2, 0; 1, 0; 2, 0; 1, -2]', [1, 3, 4, 2, 0]);
 disp(edge.nEdge);
 disp(edge.nNode);
 disp(edge.nElem);

@@ -1,15 +1,15 @@
-%[text] Stokes equation
-%[text] $\\begin{cases}\n  - \\nu \\Delta u + \\nabla p = f &\\text{in } \\Omega \\\\\n  \\nabla \\cdot u = 0 &\\text{in } \\Omega \\\\\n  u = 0 &\\text{on } \\partial \\Omega\n\\end{cases}$
+%[text] Brinkman equation
+%[text] $\\begin{cases}\n  - \\nu \\Delta u + \\alpha u + \\nabla p = f &\\text{in } \\Omega \\\\\n  \\nabla \\cdot u = 0 &\\text{in } \\Omega \\\\\n  u = 0 &\\text{on } \\partial \\Omega\n\\end{cases}$
 %[text] Mixed formulation
-%[text] $\\begin{cases}\n  \\sigma - \\nabla u = 0 &\\text{in } \\Omega \\\\\n  -\\nu \\nabla \\cdot \\sigma + \\nabla p = f &\\text{in } \\Omega \\\\\n  \\nabla \\cdot u = 0 &\\text{in } \\Omega \\\\\n  u = 0 &\\text{on } \\partial \\Omega\n\\end{cases}$
-v = 1;
+%[text] $\\begin{cases}\n  \\sigma - \\nabla u = 0 &\\text{in } \\Omega \\\\\n  -\\nu \\nabla \\cdot \\sigma + \\alpha u + \\nabla p = f &\\text{in } \\Omega \\\\\n  \\nabla \\cdot u = 0 &\\text{in } \\Omega \\\\\n  u = 0 &\\text{on } \\partial \\Omega\n\\end{cases}$
+v = 1; a = 10;
 u = Fcn("D2", "[sin(pi*x)^2*sin(2*pi*y); - sin(2*pi*x)*sin(pi*y)^2]");
 p = Fcn("D2", "10*(x-1/2)*(y-1/2)");
 d0_u = [0, 0; 0, 0]'; div_u = [1, 0; 0, 1]; dx_u = [1, 0; 1, 0]'; dy_u = [0, 1; 0, 1]'; grad_u = cat(3, dx_u, dy_u);
 s = dif(u, grad_u);
 d0_s = [0, 0; 0, 0; 0, 0; 0, 0]'; div_s = [1, 0; 1, 0; 0, 1; 0 ,1]';
 d0_p = [0, 0]'; dx_p = [1, 0]'; dy_p = [0, 1]'; grad_p = cat(3, dx_p, dy_p);
-f = - sum(dif(s, div_s), 2) * v + dif(p, grad_p);
+f = - sum(dif(s, div_s), 2) * v + u * a + dif(p, grad_p);
 
 UNV = MshEnt("D2L").UNV; UTV = MshEnt("D2L").UTV;
 len = MshEnt("D2L").len;
@@ -84,19 +84,20 @@ SDG_0M_FE = FE("D2T", FE.repFS("1", [2, 2]), ...
 SDG_0M_FES = FES(msh, SDG_0M_FE);
 %%
 %[text] SDG scheme: find $\\sigma\_h \\in \\Sigma\_h$, $u\_h \\in U\_h$, and $p\_h \\in P\_h$ such that
-%[text] $\\begin{cases}\n  \\sum\_{K \\in T\_h} \\int\_K \\sigma\_h \\tau\_h \\, dx \\, dy + \\sum\_{K \\in T\_h} \\int\_K u\_h \\nabla \\cdot \\tau\_h \\, dx \\, dy - \\sum\_{e \\in F\_h^{dl}} \\int\_e u\_h \\cdot n \[ \\tau\_h n \\cdot n \] \\, ds = 0 &\\forall \\tau\_h \\in \\Sigma\_h \\\\\n  \\nu \\sum\_{K \\in T\_h} \\int\_K \\sigma\_h \\nabla v\_h \\, dx \\, dy - \\nu \\sum\_{e \\in F\_h^{dl}} \\int\_e \\sigma\_h n \\cdot t \[ v\_h \\cdot t\] \\, ds - \\nu \\sum\_{e \\in F\_h^{pr}} \\int\_e \\sigma\_h n \[ v\_h \] \\, ds - \\sum\_{K \\in T\_h} \\int\_K p\_h \\nabla \\cdot v\_h \\, dx \\, dy + \\sum\_{e \\in F\_h^{pr}} \\int\_e p\_h \[ v\_h \\cdot n \] \\, ds = \\sum\_{K \\in T\_h} \\int\_K f v\_h \\, dx \\, dy &\\forall v\_h \\in U\_h \\\\\n  - \\sum\_{K \\in T\_h} \\int\_K u\_h \\nabla q\_h \\, dx \\, dy + \\sum\_{e \\in F\_h^{dl}} \\int\_e u\_h \\cdot n \[ q\_h \] \\, ds = 0 &\\forall q\_h \\in P\_h\n\\end{cases}$
-% Sh = SDG_1M_FES; ord_Sh = 1;
-% Uh = SDG_1V_FES; ord_Uh = 1;
-% Ph = SDG_1S_FES; ord_Ph = 1;
+%[text] $\\begin{cases}\n  \\sum\_{K \\in T\_h} \\int\_K \\sigma\_h \\tau\_h \\, dx \\, dy + \\sum\_{K \\in T\_h} \\int\_K u\_h \\nabla \\cdot \\tau\_h \\, dx \\, dy - \\sum\_{e \\in F\_h^{dl}} \\int\_e u\_h \\cdot n \[ \\tau\_h n \\cdot n \] \\, ds = 0 &\\forall \\tau\_h \\in \\Sigma\_h \\\\\n  \\alpha \\sum\_{K \\in T\_h} \\int\_K u\_h v\_h \\, dx \\, dy + \\nu \\sum\_{K \\in T\_h} \\int\_K \\sigma\_h \\nabla v\_h \\, dx \\, dy - \\nu \\sum\_{e \\in F\_h^{dl}} \\int\_e \\sigma\_h n \\cdot t \[ v\_h \\cdot t\] \\, ds - \\nu \\sum\_{e \\in F\_h^{pr}} \\int\_e \\sigma\_h n \[ v\_h \] \\, ds - \\sum\_{K \\in T\_h} \\int\_K p\_h \\nabla \\cdot v\_h \\, dx \\, dy + \\sum\_{e \\in F\_h^{pr}} \\int\_e p\_h \[ v\_h \\cdot n \] \\, ds = \\sum\_{K \\in T\_h} \\int\_K f v\_h \\, dx \\, dy &\\forall v\_h \\in U\_h \\\\\n  - \\sum\_{K \\in T\_h} \\int\_K u\_h \\nabla q\_h \\, dx \\, dy + \\sum\_{e \\in F\_h^{dl}} \\int\_e u\_h \\cdot n \[ q\_h \] \\, ds = 0 &\\forall q\_h \\in P\_h\n\\end{cases}$
+Sh = SDG_1M_FES; ord_Sh = 1;
+Uh = SDG_1V_FES; ord_Uh = 1;
+Ph = SDG_1S_FES; ord_Ph = 1;
 
-Sh = SDG_0M_FES; ord_Sh = 1;
-Uh = SDG_0V_FES; ord_Uh = 1;
-Ph = SDG_0S_FES; ord_Ph = 1;
+% Sh = SDG_0M_FES; ord_Sh = 1;
+% Uh = SDG_0V_FES; ord_Uh = 1;
+% Ph = SDG_0S_FES; ord_Ph = 1;
 
 trls = [Sh, Uh, Ph]; tsts = [Sh, Uh, Ph];
 is = 1; iu = 2; ip = 3; it = 1; iv = 2; iq = 3;
 
 d0_t = d0_s; div_t = div_s; d0_v = d0_u; div_v = div_u; grad_v = grad_u; d0_q = d0_p; grad_q = grad_p;
+Auv = DLF(msh, 2, Fcn.cst(a), d0_u, d0_v, "iTrl", iu, "iTst", iv, "GInt", GInt("D2T", ord_Uh * 2));
 Ast = DLF(msh, 2, Fcn.cst(1), d0_s, d0_t, "iTrl", is, "iTst", it, "GInt", GInt("D2T", ord_Sh * 2));
 But = [DLF(msh, 2, Fcn.cst(1), d0_u, div_t, "iTrl", iu, "iTst", it, "form", @(coef, trl, tst) coef .* dot(trl, sum(tst, 2)), "GInt", GInt("D2T", ord_Uh + ord_Sh - 1)), ...
     DLF.interface(msh, 1, [-UNV, UNV, UNV], d0_u, d0_t, "EntIdx", DlEdge, "iTrl", iu, "iTst", it, "tstOpr", "jump", "form", @(coef, trl, tst) dot(trl, coef(1)) .* dot(tst * coef(2), coef(3)), "GInt", GInt("D2L", ord_Uh + ord_Sh))];
@@ -110,7 +111,7 @@ Buq = [DLF(msh, 2, Fcn.cst(-1), d0_u, grad_q, "iTrl", iu, "iTst", iq, "GInt", GI
 Fv = SLF(msh, 2, f, d0_v, "iTst", iv, "GInt", GInt("D2T", 2 + ord_Uh));
 %%
 %[text] Solution.
-[Stiff, Load] = assemble(msh, trls, tsts, [Ast, But, Bsv, Bpv, Buq], Fv);
+[Stiff, Load] = assemble(msh, trls, tsts, [Auv, Ast, But, Bsv, Bpv, Buq], Fv);
 [sh, uh, ph] = FEF.multi(trls, Stiff \ Load);
 %%
 %[text] Error.

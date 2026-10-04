@@ -2,7 +2,7 @@ classdef FES
     % FES: Finite Element space.
     properties
         msh Msh; % Mesh.
-        elem {mustBeMember(elem, ["VOID", "D2T", "D2LR"])} = "VOID"; % Element type.
+        elem {mustBeMember(elem, ["VOID", "D2T", "D2LR", "D3T", "D3FR"])} = "VOID"; % Element type.
         LcBase (1, :) Fcn; % Local base function.
         ElParm (:, :, :); % Parameter of base function on each element.
         % ElParm(:, :, i): parameter for i-th element.
@@ -25,13 +25,19 @@ classdef FES
                 fE FE;
                 bC BC = BC.empty;
             end
-            assert(ismember(msh.type, "D2T"));
-            assert(ismember(fE.elem, ["D2T", "D2LR"]));
+            switch msh.type
+                case "D2T"
+                    assert(ismember(fE.elem, ["D2T", "D2LR"]));
+                case "D3T"
+                    assert(ismember(fE.elem, ["D3T", "D3FR"]));
+                otherwise
+                    error("Unsupported mesh type.");
+            end
             FES.msh = msh;
             FES.elem = fE.elem;
             FES.LcBase = fE.base;
             switch FES.elem
-                case "D2T"
+                case {"D2T", "D3T"}
                     % FES.ElParm = zeros(msh.dim, msh.elem.nNode, msh.nElem);
                     % for iElem = 1:msh.nElem
                     %     FES.ElParm(:, :, iElem) = msh.node.coord(:, msh.elem.node(:, iElem));
@@ -43,6 +49,9 @@ classdef FES
                     %     FES.ElParm(:, :, iEdge) = msh.node.coord(:, msh.edge.node(:, iEdge));
                     % end
                     FES.ElParm = reshape(msh.node.coord(:, msh.edge.node), msh.dim, msh.edge.nNode, msh.nEdge);
+                case "D3FR"
+                    % Trace space: "elements" are faces, parameterized by global face vertices.
+                    FES.ElParm = reshape(msh.node.coord(:, msh.face.node), msh.dim, msh.face.nNode, msh.nFace);
             end
             [FES.GlDoFs, FES.Lc2Gl] = asmDoF(msh, fE.DoFs);
             if ~isempty(bC)
@@ -98,64 +107,137 @@ classdef FES
             fEF = FEF(fES, DoFVal);
         end
     end
+    %% Static functions.
+    methods (Static)
+        function [permTab, sgnTab] = facePerm(LcDoF)
+            % FES.facePerm: permutation of samples of DoF on face.
+            % A face with permutation code c in an element has local nodes L = G(P(c, :)), where G are global face nodes
+            % (see `Elem.facePerm`). Local sample i then corresponds to global sample permTab(i, c) with sign sgnTab(i, c):
+            % - NdDoF: sample node with local barycentric coordinates (1 - a - b, a, b) w.r.t. L has global barycentric
+            %   coordinates lambda_G(P(c, k)) = lambda_L(k); the set of sample nodes must be invariant under permutation.
+            % - MoDoF: test function q_i in local coordinates equals sgnTab(i, c) * q_j in global coordinates, j = permTab(i, c);
+            %   the set of test functions must be invariant (up to sign) under permutation.
+            arguments (Input)
+                LcDoF DoF;
+            end
+            arguments (Output)
+                permTab (:, 6); % permTab(i, c): global sample corresponding to local sample i under code c.
+                sgnTab (:, 6); % sgnTab(i, c): sign (+1 or -1).
+            end
+            assert(isequal(LcDoF.domn, "D3") && LcDoF.EntDim == 2);
+            P = [1, 2, 3; 2, 3, 1; 3, 1, 2; 1, 3, 2; 3, 2, 1; 2, 1, 3];
+            nSamp = LcDoF.nSamp;
+            permTab = zeros(nSamp, 6);
+            sgnTab = ones(nSamp, 6);
+            switch class(LcDoF)
+                case "NdDoF"
+                    crd = double(LcDoF.coord);
+                    for c = 1:6
+                        barG = zeros(3, nSamp);
+                        barG(P(c, :), :) = [1 - sum(crd, 1); crd];
+                        for iSamp = 1:nSamp
+                            jSamp = find(all(abs(crd - barG(2:3, iSamp)) < 1e-12, 1));
+                            % Sample nodes on face must be invariant under permutation.
+                            assert(isscalar(jSamp));
+                            permTab(iSamp, c) = jSamp;
+                        end
+                    end
+                case "MoDoF"
+                    var = MshEnt.getInfo("D3R2").var;
+                    barG = [1 - var(1) - var(2); var(1); var(2)];
+                    tstFun = sym(zeros(1, nSamp));
+                    for iSamp = 1:nSamp
+                        assert(ismember(LcDoF.tst(iSamp).domn, ["VOID", "D3R2", "D3FR"]));
+                        tstFun(iSamp) = LcDoF.tst(iSamp).fun;
+                    end
+                    for c = 1:6
+                        % Local coordinates (lambda_L(2), lambda_L(3)) in terms of global coordinates.
+                        varL = barG(P(c, 2:3));
+                        for iSamp = 1:nSamp
+                            tstL = subs(tstFun(iSamp), var, varL);
+                            isFound = false;
+                            for jSamp = 1:nSamp
+                                for s = [1, -1]
+                                    if isequal(simplify(tstL - s * tstFun(jSamp)), sym(0))
+                                        permTab(iSamp, c) = jSamp;
+                                        sgnTab(iSamp, c) = s;
+                                        isFound = true;
+                                        break;
+                                    end
+                                end
+                                if isFound
+                                    break;
+                                end
+                            end
+                            % Test functions on face must be invariant (up to sign) under permutation.
+                            assert(isFound);
+                        end
+                    end
+            end
+        end
+    end
 end
 %% Local functions.
 function [GlDoFs, Lc2Gl] = asmDoF(msh, LcDoFs)
     % asmDoF: assemble local DoFs to global DoFs.
-    assert(ismember(msh.type, "D2T"));
+    assert(ismember(msh.type, ["D2T", "D3T"]));
     GlDoFs = LcDoFs;
-    if ismember(LcDoFs.getDomn, "D2")
+    if ismember(LcDoFs.getDomn, ["D2", "D3"])
         Lc2Gl = zeros(LcDoFs.cumDoF, msh.nElem);
-    elseif ismember(LcDoFs.getDomn, "D2R1")
-        Lc2Gl = zeros(LcDoFs.cumDoF, msh.nEdge);
+    elseif ismember(LcDoFs.getDomn, ["D2R1", "D3R2"])
+        % Trace space: "elements" are facets.
+        Lc2Gl = zeros(LcDoFs.cumDoF, msh.nEnt(msh.dim - 1));
     else
         error("Unsupported DoF domain type.");
     end
     for iDoF = 1:length(LcDoFs)
         LcDoF = LcDoFs(iDoF); GlDoF = GlDoFs(iDoF);
         GlDoF.msh = msh;
+        sgn = [];
         switch LcDoF.domn
-            case "D2"
+            case {"D2", "D3"}
                 switch LcDoF.EntDim
                     case 0
-                        switch LcDoF.share
-                            case true
-                                El_EntIdx = msh.elem.node(LcDoF.EntIdx, :);
-                                GlDoF.EntIdx = unique(El_EntIdx);
-                                map = zeros(msh.nNode, 1); map(GlDoF.EntIdx) = 1:GlDoF.nEnt;
-                                El_iEnt = reshape(map(El_EntIdx), size(El_EntIdx));
-                            case false
-                                El_EntIdx = msh.elem.node(LcDoF.EntIdx, :);
-                                GlDoF.EntIdx = El_EntIdx(:);
-                                El_iEnt = reshape(1:GlDoF.nEnt, size(El_EntIdx));
-                        end
+                        El_EntIdx = msh.elem.node(LcDoF.EntIdx, :);
+                    case msh.dim
+                        % Element.
+                        El_EntIdx = 1:msh.nElem;
                     case 1
-                        switch LcDoF.share
-                            case true
-                                El_EntIdx = abs(msh.elem.edge(LcDoF.EntIdx, :));
-                                sgn = sign(msh.elem.edge(LcDoF.EntIdx, :));
-                                GlDoF.EntIdx = unique(El_EntIdx);
-                                map = zeros(msh.nEdge, 1); map(GlDoF.EntIdx) = 1:GlDoF.nEnt;
-                                El_iEnt = reshape(map(El_EntIdx), size(El_EntIdx));
-                            case false
-                                El_EntIdx = abs(msh.elem.edge(LcDoF.EntIdx, :));
-                                sgn = sign(msh.elem.edge(LcDoF.EntIdx, :));
-                                GlDoF.EntIdx = El_EntIdx(:);
-                                El_iEnt = reshape(1:GlDoF.nEnt, size(El_EntIdx));
-                        end
+                        El_EntIdx = abs(msh.elem.edge(LcDoF.EntIdx, :));
+                        sgn = sign(msh.elem.edge(LcDoF.EntIdx, :));
                     case 2
-                        GlDoF.EntIdx = 1:msh.nElem;
-                        El_iEnt = 1:msh.nElem;
+                        % Face (3D).
+                        El_EntIdx = abs(msh.elem.face(LcDoF.EntIdx, :));
+                        sgn = sign(msh.elem.face(LcDoF.EntIdx, :));
+                        code = msh.elem.facePerm(LcDoF.EntIdx, :);
                 end
-            case "D2R1"
-                assert(isequal(LcDoF.EntDim, 1));
-                GlDoF.EntIdx = 1:msh.nEdge;
-                El_iEnt = 1:msh.nEdge;
+                if LcDoF.share
+                    GlDoF.EntIdx = unique(El_EntIdx)';
+                    map = zeros(msh.nEnt(LcDoF.EntDim), 1); map(GlDoF.EntIdx) = 1:GlDoF.nEnt;
+                    El_iEnt = reshape(map(El_EntIdx), size(El_EntIdx));
+                else
+                    GlDoF.EntIdx = El_EntIdx(:)';
+                    El_iEnt = reshape(1:GlDoF.nEnt, size(El_EntIdx));
+                end
+            case {"D2R1", "D3R2"}
+                assert(isequal(LcDoF.EntDim, msh.dim - 1));
+                GlDoF.EntIdx = 1:msh.nEnt(msh.dim - 1);
+                El_iEnt = 1:msh.nEnt(msh.dim - 1);
         end
         GlDoFs(iDoF) = GlDoF;
-        if isequal(LcDoF.domn, "D2") && LcDoF.EntDim == 1
+        if ismember(LcDoF.domn, ["D2", "D3"]) && LcDoF.EntDim == 1
+            % Samples on edge are reversed if edge orientation in element is opposite to global orientation.
             for iSamp = 1:LcDoF.nSamp
                 Lc2Gl(LcDoFs.sub2ind(iDoF, 1:LcDoF.nEnt, iSamp), :) = (GlDoFs.sub2ind(iDoF, El_iEnt, iSamp) .* (1 + sgn) / 2 + GlDoFs.sub2ind(iDoF, El_iEnt, GlDoF.nSamp - iSamp + 1) .* (1 - sgn) / 2) .* (sgn * LcDoF.orien + 1 * (1 - LcDoF.orien));
+            end
+        elseif isequal(LcDoF.domn, "D3") && LcDoF.EntDim == 2
+            % Samples on face are permuted according to permutation code of face in element (see `FES.facePerm`);
+            % sign of base function follows orientation of face in element.
+            [permTab, sgnTab] = FES.facePerm(LcDoF);
+            for iSamp = 1:LcDoF.nSamp
+                GlSamp = reshape(permTab(iSamp, code(:)), size(code));
+                GlSgn = reshape(sgnTab(iSamp, code(:)), size(code));
+                Lc2Gl(LcDoFs.sub2ind(iDoF, 1:LcDoF.nEnt, iSamp), :) = GlDoFs.sub2ind(iDoF, El_iEnt, GlSamp) .* GlSgn .* (sgn * LcDoF.orien + 1 * (1 - LcDoF.orien));
             end
         else
             for iSamp = 1:LcDoF.nSamp

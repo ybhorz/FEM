@@ -3,12 +3,13 @@ classdef DoF
     % Degree of freedom is a functional that samples function on specific mesh entity.
     % One `DoF` represent a group of degrees of freedom: a series of samplers on a set of mesh entities with given dimension.
     properties
-        domn {mustBeMember(domn, ["VOID", "D2", "D2R1"])} = "VOID"; % Domain of function.
+        domn {mustBeMember(domn, ["VOID", "D2", "D2R1", "D3", "D3R2"])} = "VOID"; % Domain of function.
         msh Msh; % Mesh.
-        EntDim {mustBeMember(EntDim, [0, 1, 2])}; % Dimension of mesh entity.
+        EntDim {mustBeMember(EntDim, [0, 1, 2, 3])}; % Dimension of mesh entity.
         % EntDim = 0: point.
         % EntDim = 1: line.
         % EntDim = 2: face.
+        % EntDim = 3: volume.
         EntIdx (1, :); % Indices of mesh entities.
         share logical; % Whether DoF is shared among mesh entities.
         orien logical; % Whether orientation of mesh entity is considered.

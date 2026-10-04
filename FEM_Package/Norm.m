@@ -4,9 +4,11 @@ classdef Norm
     properties
         %% Integrated domain.
         msh Msh; % Mesh.
-        EntDim {mustBeMember(EntDim, [1, 2])}; % Dimension of mesh entity.
+        EntDim {mustBeMember(EntDim, [1, 2, 3])}; % Dimension of mesh entity.
         % EntDim = 1: line.
         % EntDim = 2: face.
+        % EntDim = 3: volume.
+        % `EntDim` is either `msh.dim` (element) or `msh.dim - 1` (facet).
         EntIdx (1, :); % Indices of mesh entities.
         %% Integrant.
         ord (:, :, :) % Order of derivative.
@@ -23,7 +25,7 @@ classdef Norm
         function Norm = Norm(msh, EntDim, ord, options)
             arguments
                 msh Msh;
-                EntDim {mustBeMember(EntDim, [1, 2])};
+                EntDim {mustBeMember(EntDim, [1, 2, 3])};
                 ord (:, :, :);
                 options.EntIdx (1, :) = [];
                 options.pow = 2;
@@ -33,7 +35,7 @@ classdef Norm
                 options.fcnOpr {mustBeMember(options.fcnOpr, ["none", "jump"])} = "none"
                 options.GInt GInt = GInt.empty;
             end
-            checkProp(msh.type, EntDim, options.coef, options.fcnOpr, options.GInt);
+            checkProp(msh, EntDim, options.coef, options.fcnOpr, options.GInt);
             Norm.msh = msh;
             Norm.EntDim = EntDim;
             Norm.ord = ord;
@@ -52,10 +54,10 @@ classdef Norm
             else
                 warning("No GInt specified.");
                 switch EntDim
-                    case 2
-                        Norm.GInt = GInt("D2T", 1);
-                    case 1
-                        Norm.GInt = GInt("D2L", 1);
+                    case msh.dim
+                        Norm.GInt = GInt(msh.ElDomn, 1);
+                    case msh.dim - 1
+                        Norm.GInt = GInt(msh.FtDomn, 1);
                 end
             end
         end
@@ -69,27 +71,28 @@ classdef Norm
     end
 end
 % Local functions.
-function checkProp(mshType, EntDim, coef, fcnOpr, GInt)
+function checkProp(msh, EntDim, coef, fcnOpr, GInt)
     % checkProp: check validity of properties.
-    assert(ismember(mshType, "D2T"));
+    assert(ismember(msh.type, ["D2T", "D3T"]));
+    assert(ismember(EntDim, [msh.dim - 1, msh.dim]));
     switch EntDim
-        case 2
-            assert(ismember(coef.getDomn, ["VOID", "D2", "D2T"]));
-        case 1
-            assert(ismember(coef.getDomn, ["VOID", "D2", "D2L"]));
+        case msh.dim
+            assert(ismember(coef.getDomn, ["VOID", msh.domn, msh.ElDomn]));
+        case msh.dim - 1
+            assert(ismember(coef.getDomn, ["VOID", msh.domn, msh.FtDomn]));
     end
     switch EntDim
-        case 2
+        case msh.dim
             assert(ismember(fcnOpr, "none"));
-        case 1
+        case msh.dim - 1
             assert(ismember(fcnOpr, ["none", "jump"]));
     end
     if ~isempty(GInt)
         switch EntDim
-            case 2
-                assert(isequal(GInt.domn, "D2T"));
-            case 1
-                assert(isequal(GInt.domn, "D2L"));
+            case msh.dim
+                assert(isequal(GInt.domn, msh.ElDomn));
+            case msh.dim - 1
+                assert(isequal(GInt.domn, msh.FtDomn));
         end
     end
 end

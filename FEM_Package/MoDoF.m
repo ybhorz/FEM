@@ -9,10 +9,13 @@ classdef MoDoF < DoF
     % D2     | D2T      | 2     | D2R  D2TR | D2 D2T    | D2 D2T
     % D2R1   | D1       | 1     | D2R1      | D2R1      | D2R1
     % D2R1   | D2T      | 1     | D2R1      | D2R1      | D2 D2L
+    % D3     | D3T      | 1     | D3R1 D3LR | D3 D3L    | D3 D3L
+    % D3     | D3T      | 2     | D3R2 D3FR | D3 D3F    | D3 D3F
+    % D3     | D3T      | 3     | D3R  D3TR | D3 D3T    | D3 D3T
 
     properties
         tst (1, :) Fcn; % Test functions.
-        % Remark: when `domn` is "D2" and `EntDim` is 1, test functions must be symmetric (either odd or even) on the reference line [0, 1].
+        % Remark: when `domn` is "D2" or "D3" and `EntDim` is 1, test functions must be symmetric (either odd or even) on the reference line [0, 1].
         ord (:, :); % Order of derivative.
         % ord(i,j) = k: k-th derivative of j-th function component w.r.t i-th variable.
         % Remark: when `domn` is "D2R1", only zero order of derivative is supported.
@@ -32,9 +35,9 @@ classdef MoDoF < DoF
         %% Constructor.
         function MoDoF = MoDoF(domn, msh, EntDim, tst, ord, options)
             arguments
-                domn {mustBeMember(domn, ["D2", "D2R1"])};
+                domn {mustBeMember(domn, ["D2", "D2R1", "D3"])};
                 msh Msh;
-                EntDim {mustBeMember(EntDim, [1, 2])};
+                EntDim {mustBeMember(EntDim, [1, 2, 3])};
                 tst (1, :) Fcn;
                 ord (:, :);
                 options.EntIdx (1, :) = [];
@@ -58,7 +61,8 @@ classdef MoDoF < DoF
             if ~isempty(options.share)
                 MoDoF.share = options.share;
             else
-                if isequal(domn, "D2") && ismember(EntDim, 1)
+                if ismember(domn, ["D2", "D3"]) && EntDim < msh.dim
+                    % DoFs on edges (and faces in 3D) are shared by default.
                     MoDoF.share = true;
                 else
                     MoDoF.share = false;
@@ -75,12 +79,7 @@ classdef MoDoF < DoF
                 MoDoF.GInt = options.GInt;
             else
                 warning("No GInt specified.");
-                switch EntDim
-                    case 2
-                        MoDoF.GInt = GInt("D2T", 1);
-                    case 1
-                        MoDoF.GInt = GInt("D2L", 1);
-                end
+                MoDoF.GInt = GInt(entDomn(domn, EntDim), 1);
             end
         end
         % Get functions.
@@ -121,6 +120,8 @@ classdef MoDoF < DoF
                         moDoF.ord = zeros(2, fcn.nFun);
                     case "D2R1"
                         moDoF.ord = zeros(1, fcn.nFun);
+                    case "D3"
+                        moDoF.ord = zeros(3, fcn.nFun);
                 end
                 moDoF.coef = Fcn.cst(1);
                 moDoF.form = @(coef, fcn, tst) sum(coef .* fcn .* tst);
@@ -129,101 +130,83 @@ classdef MoDoF < DoF
             switch options.valType
                 case "sym"
                     val = sym(zeros(moDoF.nEnt, moDoF.nTst));
-                    switch moDoF.domn
-                        case "D2"
-                            switch moDoF.EntDim
-                                case 1
-                                    for iTst = 1:moDoF.nTst
-                                        intFcn = moDoF.form(moDoF.coef.tfm("D2LR"), fcn.dif(moDoF.ord).tfm("D2LR"), moDoF.tst(iTst)) .* Tfm("D2L").JNorm;
-                                        intVal = intFcn.int("D2LR").getFun;
-                                        for iEnt = 1:moDoF.nEnt
-                                            iEdge = moDoF.EntIdx(iEnt);
-                                            EgParm = moDoF.msh.node.coord(:, moDoF.msh.edge.node(:, iEdge));
-                                            val(iEnt, iTst) = intVal([0; 0], EgParm);
-                                        end
-                                    end
-                                case 2
-                                    for iTst = 1:moDoF.nTst
-                                        intFcn = moDoF.form(moDoF.coef.tfm("D2TR"), fcn.dif(moDoF.ord).tfm("D2TR"), moDoF.tst(iTst)) .* Tfm("D2T").JDet;
-                                        intVal = intFcn.int("D2TR").getFun;
-                                        for iEnt = 1:moDoF.nEnt
-                                            iElem = moDoF.EntIdx(iEnt);
-                                            ElParm = moDoF.msh.node.coord(:, moDoF.msh.elem.node(:, iElem));
-                                            val(iEnt, iTst) = intVal([0; 0], ElParm);
-                                        end
-                                    end
-                            end
-                        case "D2R1"
-                            switch moDoF.msh.type
-                                case "D1"
-                                    for iTst = 1:moDoF.nTst
-                                        intFcn = moDoF.form(moDoF.coef, fcn.dif(moDoF.ord), moDoF.tst(iTst));
+                case "num"
+                    val = zeros(moDoF.nEnt, moDoF.nTst);
+            end
+            switch moDoF.domn
+                case {"D2", "D3"}
+                    % Integrate over reference mesh entity, e.g. "D2LR", "D2TR", "D3LR", "D3FR", "D3TR".
+                    EntDomn = entDomn(moDoF.domn, moDoF.EntDim);
+                    EntRefDomn = MshEnt.getInfo(EntDomn).dual;
+                    if moDoF.EntDim == moDoF.msh.dim
+                        JFcn = Tfm(EntDomn).JDet;
+                    else
+                        JFcn = Tfm(EntDomn).JNorm;
+                    end
+                    EntNode = moDoF.msh.ent(moDoF.EntDim).node;
+                    for iTst = 1:moDoF.nTst
+                        intFcn = moDoF.form(moDoF.coef.tfm(EntRefDomn), fcn.dif(moDoF.ord).tfm(EntRefDomn), moDoF.tst(iTst)) .* JFcn;
+                        switch options.valType
+                            case "sym"
+                                intVal = intFcn.int(EntRefDomn).getFun;
+                                RefPnt = zeros(moDoF.EntDim, 1);
+                                for iEnt = 1:moDoF.nEnt
+                                    EntParm = moDoF.msh.node.coord(:, EntNode(:, moDoF.EntIdx(iEnt)));
+                                    val(iEnt, iTst) = intVal(RefPnt, EntParm);
+                                end
+                            case "num"
+                                % Evaluate on all mesh entities at once.
+                                nEnt = moDoF.nEnt;
+                                if nEnt == 0
+                                    continue;
+                                end
+                                intFun = intFcn.getFun("vec", true);
+                                EntPmArg = reshape(moDoF.msh.node.coord(:, EntNode(:, moDoF.EntIdx)), [], 1, nEnt);
+                                val(:, iTst) = moDoF.GInt.evalVec(@(x) intFun(x, EntPmArg), [], nEnt).';
+                        end
+                    end
+                case "D2R1"
+                    switch moDoF.msh.type
+                        case "D1"
+                            for iTst = 1:moDoF.nTst
+                                intFcn = moDoF.form(moDoF.coef, fcn.dif(moDoF.ord), moDoF.tst(iTst));
+                                switch options.valType
+                                    case "sym"
                                         intVal = intFcn.int("D2LR").getFun;
                                         for iEnt = 1:moDoF.nEnt
                                             val(iEnt, iTst) = intVal(0);
                                         end
-                                    end
-                                case "D2T"
-                                    for iTst = 1:moDoF.nTst
-                                        intFcn = moDoF.form(moDoF.coef, fcn.tfm("D2LR").dif(moDoF.ord), moDoF.tst(iTst));
+                                    case "num"
+                                        intFun = intFcn.getFun;
+                                        for iEnt = 1:moDoF.nEnt
+                                            val(iEnt, iTst) = moDoF.GInt.eval(@(x) intFun(x));
+                                        end
+                                end
+                            end
+                        case "D2T"
+                            for iTst = 1:moDoF.nTst
+                                intFcn = moDoF.form(moDoF.coef, fcn.tfm("D2LR").dif(moDoF.ord), moDoF.tst(iTst));
+                                switch options.valType
+                                    case "sym"
                                         intVal = intFcn.int("D2LR").getFun;
                                         for iEnt = 1:moDoF.nEnt
                                             iEdge = moDoF.EntIdx(iEnt);
                                             EgParm = moDoF.msh.node.coord(:, moDoF.msh.edge.node(:, iEdge));
                                             val(iEnt, iTst) = intVal(0, EgParm);
                                         end
-                                    end
-                            end
-                    end
-                    val = simplify(sym(val));
-                case "num"
-                    val = zeros(moDoF.nEnt, moDoF.nTst);
-                    switch moDoF.domn
-                        case "D2"
-                            switch moDoF.EntDim
-                                case 1
-                                    for iTst = 1:moDoF.nTst
-                                        intFcn = moDoF.form(moDoF.coef.tfm("D2LR"), fcn.dif(moDoF.ord).tfm("D2LR"), moDoF.tst(iTst)) .* Tfm("D2L").JNorm;
+                                    case "num"
                                         intFun = intFcn.getFun;
                                         for iEnt = 1:moDoF.nEnt
                                             iEdge = moDoF.EntIdx(iEnt);
                                             EgParm = moDoF.msh.node.coord(:, moDoF.msh.edge.node(:, iEdge));
                                             val(iEnt, iTst) = moDoF.GInt.eval(@(x) intFun(x, EgParm));
                                         end
-                                    end
-                                case 2
-                                    for iTst = 1:moDoF.nTst
-                                        intFcn = moDoF.form(moDoF.coef.tfm("D2TR"), fcn.dif(moDoF.ord).tfm("D2TR"), moDoF.tst(iTst)) .* Tfm("D2T").JDet;
-                                        intFun = intFcn.getFun;
-                                        for iEnt = 1:moDoF.nEnt
-                                            iElem = moDoF.EntIdx(iEnt);
-                                            ElParm = moDoF.msh.node.coord(:, moDoF.msh.elem.node(:, iElem));
-                                            val(iEnt, iTst) = moDoF.GInt.eval(@(x) intFun(x, ElParm));
-                                        end
-                                    end
-                            end
-                        case "D2R1"
-                            switch moDoF.msh.type
-                                case "D1"
-                                    for iTst = 1:moDoF.nTst
-                                        intFcn = moDoF.form(moDoF.coef, fcn.dif(moDoF.ord), moDoF.tst(iTst));
-                                        intFun = intFcn.getFun;
-                                        for iEnt = 1:moDoF.nEnt
-                                            val(iEnt, iTst) = moDoF.GInt.eval(@(x) intFun(x));
-                                        end
-                                    end
-                                case "D2T"
-                                    for iTst = 1:moDoF.nTst
-                                        intFcn = moDoF.form(moDoF.coef, fcn.tfm("D2LR").dif(moDoF.ord), moDoF.tst(iTst));
-                                        intFun = intFcn.getFun;
-                                        for iEnt = 1:moDoF.nEnt
-                                            iEdge = moDoF.EntIdx(iEnt);
-                                            EgParm = moDoF.msh.node.coord(:, moDoF.msh.edge.node(:, iEdge));
-                                            val(iEnt, iTst) = moDoF.GInt.eval(@(x) intFun(x, EgParm));
-                                        end
-                                    end
+                                end
                             end
                     end
+            end
+            if isequal(options.valType, "sym")
+                val = simplify(sym(val));
             end
         end
     end
@@ -237,18 +220,27 @@ function isTstOdd = checkProp(domn, mshType, EntDim, tst, ord, share, orien, coe
             assert(ismember(mshType, "D2T"));
         case "D2R1"
             assert(ismember(mshType, ["D1", "D2T"]));
+        case "D3"
+            assert(ismember(mshType, "D3T"));
     end
     switch domn
         case "D2"
             assert(ismember(EntDim, [1, 2]));
         case "D2R1"
             assert(ismember(EntDim, 1));
+        case "D3"
+            assert(ismember(EntDim, [1, 2, 3]));
     end
     switch domn
-        case "D2"
+        case {"D2", "D3"}
             switch EntDim
                 case 1
-                    assert(all(ismember([tst.domn], ["VOID", "D2R1", "D2LR"])));
+                    switch domn
+                        case "D2"
+                            assert(all(ismember([tst.domn], ["VOID", "D2R1", "D2LR"])));
+                        case "D3"
+                            assert(all(ismember([tst.domn], ["VOID", "D3R1", "D3LR"])));
+                    end
                     isSym = zeros(1, length(tst));
                     for iTst = 1:length(tst)
                         tstFun = tst(iTst).fun;
@@ -266,7 +258,14 @@ function isTstOdd = checkProp(domn, mshType, EntDim, tst, ord, share, orien, coe
                         end
                     end
                 case 2
-                    assert(all(ismember([tst.domn], ["VOID", "D2R", "D2TR"])));
+                    switch domn
+                        case "D2"
+                            assert(all(ismember([tst.domn], ["VOID", "D2R", "D2TR"])));
+                        case "D3"
+                            assert(all(ismember([tst.domn], ["VOID", "D3R2", "D3FR"])));
+                    end
+                case 3
+                    assert(all(ismember([tst.domn], ["VOID", "D3R", "D3TR"])));
             end
         case "D2R1"
             assert(all(ismember([tst.domn], ["VOID", "D2R1"])));
@@ -277,6 +276,8 @@ function isTstOdd = checkProp(domn, mshType, EntDim, tst, ord, share, orien, coe
         case "D2R1"
             assert(size(ord, 1) == 1);
             assert(all(ord == 0));
+        case "D3"
+            assert(size(ord, 1) == 3);
     end
     if ~isempty(share)
         switch domn
@@ -289,6 +290,13 @@ function isTstOdd = checkProp(domn, mshType, EntDim, tst, ord, share, orien, coe
                 end
             case "D2R1"
                 assert(ismember(share, false));
+            case "D3"
+                switch EntDim
+                    case {1, 2}
+                        assert(ismember(share, [true, false]));
+                    case 3
+                        assert(ismember(share, false));
+                end
         end
     end
     switch domn
@@ -301,6 +309,13 @@ function isTstOdd = checkProp(domn, mshType, EntDim, tst, ord, share, orien, coe
             end
         case "D2R1"
             assert(ismember(orien, false));
+        case "D3"
+            switch EntDim
+                case {1, 2}
+                    assert(ismember(orien, [true, false]));
+                case 3
+                    assert(ismember(orien, false));
+            end
     end
     switch domn
         case "D2"
@@ -312,14 +327,18 @@ function isTstOdd = checkProp(domn, mshType, EntDim, tst, ord, share, orien, coe
             end
         case "D2R1"
             assert(ismember(coef.getDomn, ["VOID", "D2R1"]));
+        case "D3"
+            switch EntDim
+                case 1
+                    assert(ismember(coef.getDomn, ["VOID", "D3", "D3L"]));
+                case 2
+                    assert(ismember(coef.getDomn, ["VOID", "D3", "D3F"]));
+                case 3
+                    assert(ismember(coef.getDomn, ["VOID", "D3", "D3T"]));
+            end
     end
     if ~isempty(GInt)
-        switch EntDim
-            case 2
-                assert(isequal(GInt.domn, "D2T"));
-            case 1
-                assert(isequal(GInt.domn, "D2L"));
-        end
+        assert(isequal(GInt.domn, entDomn(domn, EntDim)));
     end
 end
 function checkFcn(domn, mshType, EntDim, ord, fcn)
@@ -339,6 +358,25 @@ function checkFcn(domn, mshType, EntDim, ord, fcn)
                 case "D2T"
                     assert(ismember(fcn.domn, ["D2", "D2L"]));
             end
+        case "D3"
+            switch EntDim
+                case 1
+                    assert(ismember(fcn.domn, ["D3", "D3L"]));
+                case 2
+                    assert(ismember(fcn.domn, ["D3", "D3F"]));
+                case 3
+                    assert(ismember(fcn.domn, ["D3", "D3T"]));
+            end
     end
     assert(fcn.nFun == size(ord, 2));
+end
+function EntDomn = entDomn(domn, EntDim)
+    % entDomn: domain of mesh entity with given dimension, also the domain of its Gaussian integration.
+    switch domn
+        case {"D2", "D2R1"}
+            EntDomns = ["D2L", "D2T"];
+        case "D3"
+            EntDomns = ["D3L", "D3F", "D3T"];
+    end
+    EntDomn = EntDomns(EntDim);
 end

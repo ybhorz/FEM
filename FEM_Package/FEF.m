@@ -2,7 +2,7 @@ classdef FEF < Fcn
     % FEF: Finite Element function.
     properties
         msh Msh; % Mesh.
-        elem {mustBeMember(elem, ["VOID", "D2T", "D2LR"])} = "VOID"; % Element type.
+        elem {mustBeMember(elem, ["VOID", "D2T", "D2LR", "D3T", "D3FR"])} = "VOID"; % Element type.
         ElParm (:, :, :); % Parameter of function on each element.
         % ElParm(:, :, i): parameter for i-th element.
         ElCoef (:, :); % Coefficient of function on each element.
@@ -19,8 +19,8 @@ classdef FEF < Fcn
                 fES FES; % Finite Element space.
                 DoFVal (:, 1); % DoF values of function.
             end
-            assert(ismember(fES.msh.type, "D2T"));
-            assert(ismember(fES.elem, ["D2T", "D2LR"]));
+            assert(ismember(fES.msh.type, ["D2T", "D3T"]));
+            assert(ismember(fES.elem, ["D2T", "D2LR", "D3T", "D3FR"]));
             assert(fES.nGlDoF == length(DoFVal));
             fcn = comb(fES.LcBase, sym("coef", [fES.nLcDoF, 1]));
             FEF = FEF@Fcn(fcn.domn, fcn.fun, fcn.coef);

@@ -6,6 +6,7 @@ classdef BC
         % Mesh.
         node (1, :); % Index of boundary node.
         edge (1, :); % Index of boundary edge.
+        face (1, :); % Index of boundary face (3D).
         % Degree of freedom.
         DoFIdx (1, :); % Index of boundary DoF.
         DoFVal (1, :); % Value of boundary DoF.
@@ -20,10 +21,12 @@ classdef BC
                 fcn (1, :) Fcn;
                 options.node (1, :) = [];
                 options.edge (1, :) = [];
+                options.face (1, :) = [];
             end
             BC.fcn = fcn;
             BC.node = options.node;
             BC.edge = options.edge;
+            BC.face = options.face;
         end
         % Get functions.
         function nDoF = get.nDoF(BC)
@@ -38,8 +41,8 @@ classdef BC
             else
                 assert(length(BC.fcn) == length(DoFs));
             end
-            assert(ismember(DoFs.getDomn, ["D2", "D2R1"]));
-            assert(ismember(DoFs.getMsh.type, "D2T"));
+            assert(ismember(DoFs.getDomn, ["D2", "D2R1", "D3", "D3R2"]));
+            assert(ismember(DoFs.getMsh.type, ["D2T", "D3T"]));
             BC.DoFIdx = zeros(1, DoFs.cumDoF);
             BC.DoFVal = zeros(1, DoFs.cumDoF);
             for iDoF = 1:length(DoFs)
@@ -65,6 +68,19 @@ classdef BC
                                 idx = DoFs.sub2ind(iDoF, iEnt, 1:DoF.nSamp);
                                 BC.DoFIdx(idx) = 1;
                                 BC.DoFVal(idx) = val(iEnt, :);
+                            end
+                        end
+                    case 2
+                        % Face in 3D (element in 2D: no boundary condition).
+                        if DoF.msh.dim == 3
+                            assert(~isempty(BC.face));
+                            for iEnt = 1:length(DoF.EntIdx)
+                                iFace = DoF.EntIdx(iEnt);
+                                if ismember(iFace, BC.face)
+                                    idx = DoFs.sub2ind(iDoF, iEnt, 1:DoF.nSamp);
+                                    BC.DoFIdx(idx) = 1;
+                                    BC.DoFVal(idx) = val(iEnt, :);
+                                end
                             end
                         end
                 end
