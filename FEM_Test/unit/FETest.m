@@ -261,6 +261,30 @@ classdef FETest < matlab.unittest.TestCase
                 end
             end
             tc.verifyEqual(mom, eye(12), "AbsTol", 1e-12);
+            % 3D matrix-valued (rows mapped, Stokes SDG_1 stress): moments of (sigma n)_i against barycentric coordinates
+            % of faces, DoF groups by face set (faces 1, 2, 3; face 4) and row i.
+            % Values of base functions are evaluated numerically (`mapVal`, checked against symbolic base functions in
+            % `mapValues`).
+            fE = stdFE("StSDG1M");
+            tc.verifyEqual(fE.nDoF, 36);
+            mom = zeros(36);
+            iDoF0 = 0;
+            for iGrp = 1:length(fE.DoFs)
+                dof = fE.DoFs(iGrp);
+                iRow = find(~isnan(dof.ord(1, :)), 1);
+                for iEnt = 1:dof.nEnt
+                    FcNd = P(:, D3TElem.face.node(:, dof.EntIdx(iEnt)));
+                    nor = cross(FcNd(:, 2) - FcNd(:, 1), FcNd(:, 3) - FcNd(:, 1));
+                    lam = [1 - sum(gInt.pnt, 1); gInt.pnt];
+                    % S(k, i, p): k-th component (column-major 3 x 3) of i-th base function at p-th Gauss point.
+                    S = mapVal(fE.RefBase, fE.map, zeros(3, 9), FcNd * lam, P, fE.RefKey);
+                    Sn = reshape(sum(reshape(S(iRow:3:9, :, :), 3, 36, []) .* nor, 1), 36, []);
+                    idx = iDoF0 + iEnt + dof.nEnt * (0:2);
+                    mom(idx, :) = mom(idx, :) + (lam .* gInt.wgt) * Sn.';
+                end
+                iDoF0 = iDoF0 + dof.nDoF;
+            end
+            tc.verifyEqual(mom, eye(36), "AbsTol", 1e-10);
             % Invalid: nodal DoF, coefficient not on facet, scalar function space.
             tc.verifyError(@() FE("D3T", "[1,0,0; 0,1,0; 0,0,1; x,y,z].'", ...
                 NdDoF("D3", D3TElem, 2, [1/3; 1/3], zeros(3), "coef", MshEnt("D3F").UNV, "orien", true), "map", "piolaDiv"), ...
@@ -280,7 +304,8 @@ classdef FETest < matlab.unittest.TestCase
                 "orien", true, "GInt", GInt("D2L", 4)), "map", "piolaDiv");
             cases = {stdFE("P2"), [0; 0; 0]; stdFE("P2"), grad; stdFE("P2"), [2; 0; 0]; stdFE("P2"), [0; 1; 1]; ...
                 stdFE("BDM1"), zeros(3); stdFE("BDM1"), eye(3); stdFE("BDM1"), gradV; ...
-                stdFE("NED1"), zeros(3); stdFE("NED1"), gradV; RT0_2D, zeros(2); RT0_2D, eye(2)};
+                stdFE("NED1"), zeros(3); stdFE("NED1"), gradV; RT0_2D, zeros(2); RT0_2D, eye(2); ...
+                stdFE("StSDG1M"), zeros(3, 9); stdFE("StSDG1M"), repelem(eye(3), 1, 3)};
             for iCase = 1:size(cases, 1)
                 fE = cases{iCase, 1};
                 ord = cases{iCase, 2};
@@ -293,12 +318,14 @@ classdef FETest < matlab.unittest.TestCase
                 end
                 X = P * bary;
                 val = mapVal(fE.RefBase, fE.map, ord, X, P);
+                % Symbolic derivatives of mapped base functions are expensive: check at most 6 base functions.
+                iBases = unique(round(linspace(1, fE.nDoF, min(fE.nDoF, 6))));
                 % Cached function handles (by key) give the same values.
                 tc.verifyNotEqual(fE.RefKey, "");
                 for iCall = 1:2
                     tc.verifyEqual(mapVal(fE.RefBase, fE.map, ord, X, P, fE.RefKey), val, "AbsTol", 1e-14);
                 end
-                for iBase = 1:fE.nDoF
+                for iBase = iBases
                     fun = fE.base(iBase).dif(ord).getFun;
                     for iPnt = 1:size(X, 2)
                         ref = fun(X(:, iPnt), P);

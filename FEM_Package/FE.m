@@ -14,7 +14,8 @@ classdef FE
     % ---------|----------|-------------------------------------------------------------------------------------------
     % none     | all      | all
     % affine   | D2T D3T  | NdDoF with zero-order derivatives and constant coefficients
-    % piolaDiv | D2T D3T  | MoDoF on facets of vector-valued function with zero-order derivatives and normal coefficient
+    % piolaDiv | D2T D3T  | MoDoF on facets of vector-valued (or matrix-valued, row by row) function with zero-order
+    %          |          | derivatives and normal coefficient
     % piolaCurl| D2T D3T  | MoDoF on edges of vector-valued function with zero-order derivatives and tangent coefficient
 
     properties
@@ -36,6 +37,8 @@ classdef FE
         % v(x) = B * v_ref(toRef(x)) / det(B), where x = B * x_ref + b. It preserves normal moments on facets
         % (int_F v.n q ds = int_F_ref v_ref.n_ref q ds_ref), hence is valid for H(div) elements (RT, BDM) whose DoFs are
         % such moments (`MoDoF` with `coef` = UNV). Point values of normal component (`NdDoF`) are not preserved.
+        % For matrix-valued functions, each row is mapped by the contravariant Piola transformation, i.e.
+        % sigma(x) = (sigma_ref o toRef) * B^T / det(B), which preserves moments of each component of sigma * n on facets.
         % piolaCurl: as "affine", but vector-valued base functions are mapped by covariant Piola transformation
         % v(x) = B^{-T} * v_ref(toRef(x)). It preserves tangential moments on edges
         % (int_e v.t q ds = int_e_ref v_ref.t_ref q ds_ref), hence is valid for H(curl) elements (Nedelec) whose DoFs are
@@ -189,7 +192,12 @@ classdef FE
                     B = jacobian(elTfm.toOrg, elTfm.refVar);
                     base = base.tfm(FE.elem);
                     for iBase = 1:FE.nDoF
-                        base(iBase) = Fcn(FE.elem, B * base(iBase).fun / det(B));
+                        if iscolumn(base(iBase).fun)
+                            base(iBase) = Fcn(FE.elem, B * base(iBase).fun / det(B));
+                        else
+                            % Matrix-valued: rows are mapped.
+                            base(iBase) = Fcn(FE.elem, base(iBase).fun * B.' / det(B));
+                        end
                     end
                 case "piolaCurl"
                     % Covariant Piola transformation: v = B^{-T} * (v_ref o toRef).
@@ -245,7 +253,8 @@ function checkProp(elem, FS, DoFs, map)
         case "piolaDiv"
             assert(ismember(elem, ["D2T", "D3T"]));
             dim = MshEnt(elem).dim;
-            assert(ismatrix(FS) && size(FS, 1) == dim);
+            % Vector-valued, or matrix-valued with rows of length dim.
+            assert(size(FS, 1) == dim && (ismatrix(FS) || size(FS, 2) == dim));
             for iDoF = 1:length(DoFs)
                 assert(isa(DoFs(iDoF), "MoDoF"));
                 assert(DoFs(iDoF).EntDim == dim - 1);

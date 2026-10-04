@@ -18,10 +18,14 @@ function fE = stdFE(name)
     % SDG0V  | vector SDG_0: constant, DoFs are normal fluxes through faces 1, 2, 3 (dual faces)
     % SDG1S  | scalar SDG_1: linear, DoFs at vertices of face 4 (shared) and at vertex 4 (not shared)
     % SDG1V  | vector SDG_1: linear, BDM1 moments on faces 1, 2, 3 (shared) and on face 4 (not shared)
+    % StSDG1M| matrix SDG_1 of Stokes: linear, moments of each component of sigma * n against barycentric coordinates
+    %        | on faces 1, 2, 3 (shared) and on face 4 (not shared), rows mapped by contravariant Piola transformation
+    % StSDG1V| vector SDG_1 of Stokes: linear, each component at vertices of face 4 (shared) and at vertex 4 (not shared)
+    % StSDG1S| scalar SDG_1 of Stokes: linear, value at vertex 4 and at midpoints of edges [1, 4], [2, 4], [3, 4]
 
     arguments (Input)
         name (1, 1) string {mustBeMember(name, ["P0", "P1", "P2", "P3", "DG1", "CR", "RT0", "BDM1", "NED1", "TP1", ...
-            "SDG0S", "SDG0V", "SDG1S", "SDG1V"])};
+            "SDG0S", "SDG0V", "SDG1S", "SDG1V", "StSDG1M", "StSDG1V", "StSDG1S"])};
     end
     arguments (Output)
         fE FE;
@@ -77,6 +81,35 @@ function fE = stdFE(name)
                 [MoDoF("D3", D3TElem, 2, FcBar, zeros(3), "coef", UNV, "EntIdx", [1, 2, 3], "orien", true, "GInt", GInt("D3F", 2)), ...
                 MoDoF("D3", D3TElem, 2, FcBar, zeros(3), "coef", UNV, "EntIdx", 4, "orien", true, "share", false, ...
                 "GInt", GInt("D3F", 2))], "map", "piolaDiv");
+        case "StSDG1M"
+            % Row i of sigma: components i, i + 3, i + 6 (column-major); other components are disabled (NaN order).
+            DoFs = MoDoF.empty;
+            for EntIdx = {[1, 2, 3], 4}
+                for iRow = 1:3
+                    ord = nan(3, 9);
+                    ord(:, iRow:3:9) = 0;
+                    DoFs(end + 1) = MoDoF("D3", D3TElem, 2, FcBar, ord, "coef", UNV, "EntIdx", EntIdx{1}, "orien", true, ...
+                        "share", isequal(EntIdx{1}, [1, 2, 3]), "form", @(coef, fcn, tst) sum(fcn * coef(1)) .* tst, ...
+                        "GInt", GInt("D3F", 2));
+                end
+            end
+            fE = FE("D3T", FE.repFS("[1,x,y,z]", [3, 3]), DoFs, "map", "piolaDiv");
+        case "StSDG1V"
+            DoFs = NdDoF.empty;
+            for iComp = 1:3
+                ord = nan(3, 3);
+                ord(:, iComp) = 0;
+                DoFs(end + 1) = NdDoF("D3", D3TElem, 2, [0, 1, 0; 0, 0, 1], ord, "EntIdx", 4);
+            end
+            for iComp = 1:3
+                ord = nan(3, 3);
+                ord(:, iComp) = 0;
+                DoFs(end + 1) = NdDoF("D3", D3TElem, 0, [], ord, "EntIdx", 4, "share", false);
+            end
+            fE = FE("D3T", FE.repFS("[1,x,y,z]", [3, 1]), DoFs, "map", "affine");
+        case "StSDG1S"
+            fE = FE("D3T", "[1,x,y,z]", [NdDoF("D3", D3TElem, 0, [], d0, "EntIdx", 4), ...
+                NdDoF("D3", D3TElem, 1, 1/2, d0, "EntIdx", [3, 5, 6])], "map", "affine");
         case "TP1"
             fE = FE("D3FR", "[1,s,t]", NdDoF("D3R2", MshEnt("D3FR").msh, 2, [0, 1, 0; 0, 0, 1], [0; 0], "share", false));
     end

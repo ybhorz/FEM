@@ -82,12 +82,24 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
         asmSLF(options.Fwv(iFwv), options.preSol(abs(options.Fwv(iFwv).iPre)));
     end
     if options.impBC
+        % Rows of boundary DoFs are replaced by identity rows (by a diagonal mask, since assigning rows of a sparse
+        % matrix is slow).
+        isBd = false(size(Stiff, 1), 1);
         for iTrl = 1:length(trls)
             if ~isempty(trls(iTrl).BC)
                 BdDoFIdx = trls.cumDoF(iTrl - 1) + trls(iTrl).BC.DoFIdx;
-                Stiff(BdDoFIdx, :) = 0;
-                Stiff(sub2ind(size(Stiff), BdDoFIdx, BdDoFIdx)) = 1;
+                isBd(BdDoFIdx) = true;
                 Load(BdDoFIdx) = trls(iTrl).BC.DoFVal;
+            end
+        end
+        if any(isBd)
+            nRow = size(Stiff, 1);
+            BdIdx = find(isBd);
+            if issparse(Stiff)
+                Stiff = spdiags(double(~isBd), 0, nRow, nRow) * Stiff + sparse(BdIdx, BdIdx, 1, nRow, size(Stiff, 2));
+            else
+                Stiff(BdIdx, :) = 0;
+                Stiff(sub2ind(size(Stiff), BdIdx, BdIdx)) = 1;
             end
         end
     end
@@ -190,16 +202,25 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
         [iTstBs, iTrlBs] = ndgrid(1:tst.nLcDoF, 1:trl.nLcDoF);
         nPair = numel(iTstBs);
         nPnt = size(X, 2);
+        nTst = tst.nLcDoF;
         intVal = zeros(nPair, nEnt);
-        for iPair = 1:nPair
-            T = reshape(TrlVal(:, iTrlBs(iPair), :, :), [], nPnt, nEnt);
-            S = reshape(TstVal(:, iTstBs(iPair), :, :), [], nPnt, nEnt);
+        % Test base functions are batched: their values are stacked along entities (chunks of bounded size).
+        for iTsts = chunkIdx(nTst, numel(TstVal) / nTst)
+            m = numel(iTsts{1});
+            S = reshape(permute(TstVal(:, iTsts{1}, :, :), [1, 3, 4, 2]), [], nPnt, nEnt * m);
+            [XRep, ArgsRep, JacRep] = repEnt(X, Args, Jac, m);
             if isLin
-                F = intFun(X, Args{:}, reshape(PreVal, [], nPnt, nEnt), T, S);
-            else
-                F = intFun(X, Args{:}, T, S);
+                PreRep = repmat(reshape(PreVal, [], nPnt, nEnt), 1, 1, m);
             end
-            intVal(iPair, :) = Auv.GInt.sumVec(F, Jac);
+            for jTrl = 1:trl.nLcDoF
+                T = repmat(reshape(TrlVal(:, jTrl, :, :), [], nPnt, nEnt), 1, 1, m);
+                if isLin
+                    F = intFun(XRep, ArgsRep{:}, PreRep, T, S);
+                else
+                    F = intFun(XRep, ArgsRep{:}, T, S);
+                end
+                intVal(iTsts{1} + nTst * (jTrl - 1), :) = reshape(Auv.GInt.sumVec(F, JacRep), nEnt, m).';
+            end
         end
         tstL2G = tstL2G(iTstBs(:), :);
         trlL2G = trlL2G(iTrlBs(:), :);
@@ -286,15 +307,18 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
             intFun = intFcn.getFun("parm", ArgSym, "coef", {TstSym}, "vec", true);
         end
         nPnt = size(X, 2);
-        intVal = zeros(tst.nLcDoF, nEnt);
-        for iTstBase = 1:tst.nLcDoF
-            S = reshape(TstVal(:, iTstBase, :, :), [], nPnt, nEnt);
+        nTst = tst.nLcDoF;
+        intVal = zeros(nTst, nEnt);
+        for iTsts = chunkIdx(nTst, numel(TstVal) / nTst)
+            m = numel(iTsts{1});
+            S = reshape(permute(TstVal(:, iTsts{1}, :, :), [1, 3, 4, 2]), [], nPnt, nEnt * m);
+            [XRep, ArgsRep, JacRep] = repEnt(X, Args, Jac, m);
             if isLin
-                F = intFun(X, Args{:}, reshape(PreVal, [], nPnt, nEnt), S);
+                F = intFun(XRep, ArgsRep{:}, repmat(reshape(PreVal, [], nPnt, nEnt), 1, 1, m), S);
             else
-                F = intFun(X, Args{:}, S);
+                F = intFun(XRep, ArgsRep{:}, S);
             end
-            intVal(iTstBase, :) = Fv.GInt.sumVec(F, Jac);
+            intVal(iTsts{1}, :) = reshape(Fv.GInt.sumVec(F, JacRep), nEnt, m).';
         end
         asmLoad(cumTstDoF(abs(Fv.iTst)) + abs(tstL2G), intVal .* sign(tstL2G));
     end
@@ -425,4 +449,16 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
         % asmLoad: add values V to entries I of the load vector (I, V of the same size).
         Load = Load + accumarray(I(:), V(:), size(Load));
     end
+end
+%% Local functions.
+function chunks = chunkIdx(n, sz)
+    % chunkIdx: split 1:n into chunks (cell array, by column) such that a chunk holds about 2e7 values of size `sz` each.
+    m = max(1, min(n, floor(2e7 / max(1, sz))));
+    chunks = arrayfun(@(i0) i0:min(i0 + m - 1, n), 1:m:n, "UniformOutput", false);
+end
+function [XRep, ArgsRep, JacRep] = repEnt(X, Args, Jac, m)
+    % repEnt: replicate points, batched arguments and Jacobians of mesh entities m times along entities.
+    XRep = repmat(X, 1, 1, m);
+    ArgsRep = cellfun(@(arg) repmat(arg, 1, 1, m), Args, "UniformOutput", false);
+    JacRep = repmat(Jac, 1, 1, m);
 end

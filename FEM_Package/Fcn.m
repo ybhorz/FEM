@@ -469,7 +469,9 @@ classdef Fcn
                     for iFun = 1:fcn.nFun
                         if all(ord(:, iFun) >= 0)
                             for iVar = 1:fcn.nVar
-                                fcn.fun(iFun) = diff(fcn.fun(iFun), fcn.var(iVar), ord(iVar, iFun));
+                                if ord(iVar, iFun) > 0
+                                    fcn.fun(iFun) = diff(fcn.fun(iFun), fcn.var(iVar), ord(iVar, iFun));
+                                end
                             end
                         else
                             fcn.fun(iFun) = sym(0);
@@ -483,7 +485,9 @@ classdef Fcn
                         for iOutFun = 1:nOutFun
                             if all(ord(:, 1, iOutFun) >= 0)
                                 for iVar = 1:fcn.nVar
-                                    outFun(iOutFun) = diff(outFun(iOutFun), fcn.var(iVar), ord(iVar, 1, iOutFun));
+                                    if ord(iVar, 1, iOutFun) > 0
+                                        outFun(iOutFun) = diff(outFun(iOutFun), fcn.var(iVar), ord(iVar, 1, iOutFun));
+                                    end
                                 end
                             else
                                 outFun(iOutFun) = sym(0);
@@ -498,7 +502,9 @@ classdef Fcn
                             for iFun = 1:fcn.nFun
                                 if all(ord(:, iFun, iOutFun) >= 0)
                                     for iVar = 1:fcn.nVar
-                                        outFun(iFun, iOutFun) = diff(outFun(iFun, iOutFun), fcn.var(iVar), ord(iVar, iFun, iOutFun));
+                                        if ord(iVar, iFun, iOutFun) > 0
+                                            outFun(iFun, iOutFun) = diff(outFun(iFun, iOutFun), fcn.var(iVar), ord(iVar, iFun, iOutFun));
+                                        end
                                     end
                                 else
                                     outFun(iFun, iOutFun) = sym(0);

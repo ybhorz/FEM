@@ -280,23 +280,50 @@ classdef FESTest < matlab.unittest.TestCase
             fES = FES(msh, stdFE("SDG0V"));
             tc.verifyEqual(fES.nGlDoF, nDl);
             verifyProj(tc, fES, Fcn("D3", "[1; -2; 3]"));
-            verifyFaceCont(tc, fES, DlFace, true);
+            verifyFaceCont(tc, fES, DlFace, "normal");
             % SDG_1.
             fES = FES(msh, stdFE("SDG1S"));
             tc.verifyEqual(fES.nGlDoF, 3 * nPr + msh.nElem);
             verifyShare(tc, fES, stdFE("SDG1S"));
             verifyProj(tc, fES, Fcn("D3", "1 + 2*x - y + 3*z"));
-            verifyFaceCont(tc, fES, PrOFace, false);
+            verifyFaceCont(tc, fES, PrOFace, "value");
             fES = FES(msh, stdFE("SDG1V"));
             tc.verifyEqual(fES.nGlDoF, 3 * nDl + 3 * msh.nElem);
             verifyProj(tc, fES, Fcn("D3", "[1 + 2*x - y; z - 3*x + 1; x + y + 2*z]"));
-            verifyFaceCont(tc, fES, DlFace, true);
+            verifyFaceCont(tc, fES, DlFace, "normal");
             % Not continuous on the other faces: scalar jumps on some dual face, normal component on some primal face.
             rng(7);
             fEF = FEF(FES(msh, stdFE("SDG1S")), rand(3 * nPr + msh.nElem, 1));
-            tc.verifyGreaterThan(maxJump(fEF, DlFace, false), 1e-3);
+            tc.verifyGreaterThan(maxJump(fEF, DlFace, "value"), 1e-3);
             fEF = FEF(FES(msh, stdFE("SDG1V")), rand(3 * nDl + 3 * msh.nElem, 1));
-            tc.verifyGreaterThan(maxJump(fEF, PrOFace, true), 1e-3);
+            tc.verifyGreaterThan(maxJump(fEF, PrOFace, "normal"), 1e-3);
+        end
+        function StokesSDG_3D(tc)
+            % SDG elements of Stokes on Alfeld split mesh: traction of matrix continuous on dual faces, vector continuous
+            % on interior primal faces, scalar continuous on dual faces.
+            msh = mshSplit(mshD3TS([0, 1, 0, 1, 0, 1], 1));
+            PrOFace = find(msh.face.type == 0);
+            DlFace = find(msh.face.type == 1i);
+            nPr = nnz(msh.face.type ~= 1i);
+            nDl = length(DlFace);
+            fES = FES(msh, stdFE("StSDG1M"));
+            tc.verifyEqual(fES.nGlDoF, 9 * nDl + 9 * msh.nElem);
+            verifyProj(tc, fES, Fcn("D3", "[1 + x, y - z, 2*z; x - y, 3, z + 2*x; y, x + y + z, 1 - x]"));
+            verifyFaceCont(tc, fES, DlFace, "traction");
+            rng(7);
+            tc.verifyGreaterThan(maxJump(FEF(fES, rand(fES.nGlDoF, 1)), PrOFace, "traction"), 1e-3);
+            fES = FES(msh, stdFE("StSDG1V"));
+            tc.verifyEqual(fES.nGlDoF, 9 * nPr + 3 * msh.nElem);
+            verifyShare(tc, fES, stdFE("StSDG1V"));
+            verifyProj(tc, fES, Fcn("D3", "[1 + 2*x - y; z - 3*x + 1; x + y + 2*z]"));
+            verifyFaceCont(tc, fES, PrOFace, "value");
+            tc.verifyGreaterThan(maxJump(FEF(fES, rand(fES.nGlDoF, 1)), DlFace, "value"), 1e-3);
+            fES = FES(msh, stdFE("StSDG1S"));
+            tc.verifyEqual(fES.nGlDoF, msh.nElem / 4 + nnz(msh.edge.type == 1i));
+            verifyShare(tc, fES, stdFE("StSDG1S"));
+            verifyProj(tc, fES, Fcn("D3", "1 + 2*x - y + 3*z"));
+            verifyFaceCont(tc, fES, DlFace, "value");
+            tc.verifyGreaterThan(maxJump(FEF(fES, rand(fES.nGlDoF, 1)), PrOFace, "value"), 1e-3);
         end
         function faceSign3D(tc)
             % Oriented DoF on face: sign of base function follows orientation of face in element.
@@ -360,15 +387,16 @@ function verifyProj(tc, fES, fcn)
         end
     end
 end
-function verifyFaceCont(tc, fES, FcIdx, isNormal)
-    % verifyFaceCont: verify that for random DoF values, function (or its normal component if `isNormal`) from both
-    % sides of given interior faces agrees.
+function verifyFaceCont(tc, fES, FcIdx, mode)
+    % verifyFaceCont: verify that for random DoF values, function (see `maxJump` for `mode`) from both sides of given
+    % interior faces agrees.
     rng(5);
     fEF = FEF(fES, rand(fES.nGlDoF, 1));
-    tc.verifyLessThan(maxJump(fEF, FcIdx, isNormal), 1e-12);
+    tc.verifyLessThan(maxJump(fEF, FcIdx, mode), 1e-12);
 end
-function jump = maxJump(fEF, FcIdx, isNormal)
-    % maxJump: maximal jump of function (or its normal component) across given interior faces at three points per face.
+function jump = maxJump(fEF, FcIdx, mode)
+    % maxJump: maximal jump across given interior faces at three points per face of
+    % "value": function; "normal": normal component of vector; "traction": matrix times normal.
     msh = fEF.msh;
     fun = fEF.getFun;
     jump = 0;
@@ -381,10 +409,13 @@ function jump = maxJump(fEF, FcIdx, isNormal)
             pnt = FcNd * bary;
             v1 = fun(pnt, fEF.ElParm(:, :, K(1)), fEF.ElCoef(:, K(1)));
             v2 = fun(pnt, fEF.ElParm(:, :, K(2)), fEF.ElCoef(:, K(2)));
-            if isNormal
-                jump = max(jump, abs(dot(v1 - v2, nor)));
-            else
-                jump = max(jump, max(abs(v1 - v2)));
+            switch mode
+                case "value"
+                    jump = max(jump, max(abs(v1 - v2), [], "all"));
+                case "normal"
+                    jump = max(jump, abs(dot(v1 - v2, nor)));
+                case "traction"
+                    jump = max(jump, max(abs((v1 - v2) * nor)));
             end
         end
     end

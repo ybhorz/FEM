@@ -212,8 +212,9 @@ classdef MoDoF < DoF
         function val = evalBatch(moDoF, fcns)
             % MoDoF.evalBatch: evaluate moment DoF numerically on several functions at once (domain "D2" or "D3").
             % val(i, j, k): DoF value of k-th function w.r.t. j-th test function on i-th mesh entity.
-            % For each test function, the integrands of all functions share one function handle (cf. `eval` with
-            % "valType" "num", which generates one handle per function).
+            % Functions must not depend on parameters (e.g. function space of `FE`). As in `assemble`, values of
+            % (derivatives of) the functions at Gauss points of all entities are computed numerically with one function
+            % handle, and the integrand is turned into one handle per test function with placeholder `fcnVal`.
             arguments
                 moDoF MoDoF;
                 fcns (1, :) Fcn;
@@ -233,21 +234,37 @@ classdef MoDoF < DoF
                 JFcn = Tfm(EntDomn).JNorm;
             end
             EntNode = moDoF.msh.ent(moDoF.EntDim).node;
-            EntPmArg = reshape(double(moDoF.msh.node.coord(:, EntNode(:, moDoF.EntIdx))), [], 1, nEnt);
-            coef = moDoF.coef.tfm(EntRefDomn);
-            fcnDiv(1:nFcn) = Fcn.cst(0);
+            EntParm = reshape(double(moDoF.msh.node.coord(:, EntNode(:, moDoF.EntIdx))), moDoF.msh.dim, size(EntNode, 1), nEnt);
+            EntPmArg = reshape(EntParm, [], 1, nEnt);
+            % Gauss points on reference entity and in physical coordinates.
+            [XRef, Jac] = moDoF.GInt.pntVec([], nEnt);
+            XPhy = pagemtimes(EntParm(:, 2:end, :) - EntParm(:, 1, :), XRef) + EntParm(:, 1, :);
+            nPnt = size(XRef, 2);
+            % Values of derivatives of all functions: FcnVal(:, k, :, :) for k-th function.
             for iFcn = 1:nFcn
                 checkFcn(moDoF.domn, moDoF.msh.type, moDoF.EntDim, moDoF.ord, fcns(iFcn));
-                fcnDiv(iFcn) = fcns(iFcn).dif(moDoF.ord).tfm(EntRefDomn);
             end
-            for iTst = 1:moDoF.nTst
-                intFcns(1:nFcn) = Fcn.cst(0);
-                for iFcn = 1:nFcn
-                    intFcns(iFcn) = moDoF.form(coef, fcnDiv(iFcn), moDoF.tst(iTst)) .* JFcn;
+            fcnDiv = fcns.dif(moDoF.ord);
+            sDiv = size(fcnDiv(1).fun);
+            nComp = prod(sDiv);
+            comps(1:nComp * nFcn) = Fcn.cst(0);
+            for iFcn = 1:nFcn
+                for iComp = 1:nComp
+                    comps((iFcn - 1) * nComp + iComp) = Fcn(moDoF.domn, fcnDiv(iFcn).fun(iComp));
                 end
-                intFun = intFcns.getFun("vec", true);
-                V = moDoF.GInt.evalVec(@(x) intFun(x, EntPmArg), [], nEnt);
-                val(:, iTst, :) = reshape(V.', nEnt, 1, nFcn);
+            end
+            funH = comps.getFun("vec", true);
+            FcnVal = reshape(funH(XPhy), nComp, nFcn, nPnt, nEnt);
+            % Integrand with placeholder for the function values.
+            FcnSym = sym('fcnVal', sDiv);
+            coef = moDoF.coef.tfm(EntRefDomn);
+            for iTst = 1:moDoF.nTst
+                intFcn = moDoF.form(coef, Fcn(EntRefDomn, FcnSym), moDoF.tst(iTst)) .* JFcn;
+                intFun = intFcn.getFun("parm", {MshEnt(EntRefDomn).parm}, "coef", {FcnSym}, "vec", true);
+                for iFcn = 1:nFcn
+                    F = intFun(XRef, EntPmArg, reshape(FcnVal(:, iFcn, :, :), nComp, nPnt, nEnt));
+                    val(:, iTst, iFcn) = moDoF.GInt.sumVec(F, Jac).';
+                end
             end
         end
     end

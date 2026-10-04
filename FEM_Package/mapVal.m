@@ -2,7 +2,7 @@ function val = mapVal(RefBase, map, ord, X, ElParm, RefKey)
     % mapVal: values of (derivatives of) mapped base functions at physical points, evaluated numerically.
     % Base functions of an FE with map "affine", "piolaDiv" or "piolaCurl" (see `FE`) are v = M * (v_ref o toRef),
     % where x = B * x_ref + b maps the reference element (vertices 0, e_1, ..., e_d) to the element and M = I, B / det(B)
-    % or B^{-T}. Their derivatives follow from the chain rule, d/dx_j = sum_k (B^{-1})_{kj} d/dx_ref_k, so only the
+    % (kron(B, I) / det(B) on vec of matrix-valued functions, i.e. rows mapped) or B^{-T}. Their derivatives follow from the chain rule, d/dx_j = sum_k (B^{-1})_{kj} d/dx_ref_k, so only the
     % (small) reference base functions are differentiated and evaluated, instead of the mapped functions whose symbolic
     % expressions contain all element parameters.
     % val(k, i, p, e): k-th component of derivative `ord` (see `Fcn.dif`) of i-th base function at X(:, p, e).
@@ -31,10 +31,21 @@ function val = mapVal(RefBase, map, ord, X, ElParm, RefKey)
     XRef = pagemtimes(BInv, X - b);
     switch map
         case "affine"
-            M = repmat(eye(nFun), 1, 1, nEnt);
+            M = []; % Identity.
         case "piolaDiv"
-            assert(nFun == dim);
-            M = B ./ detVec(B);
+            if nFun == dim
+                M = B ./ detVec(B);
+            else
+                % Matrix-valued (rows mapped): vec(sigma_ref * B^T) = kron(B, I) * vec(sigma_ref).
+                assert(isequal(sFun, [dim, dim]));
+                M = zeros(nFun, nFun, nEnt);
+                for a = 1:dim
+                    for c = 1:dim
+                        M((a - 1) * dim + (1:dim), (c - 1) * dim + (1:dim), :) = B(a, c, :) .* eye(dim);
+                    end
+                end
+                M = M ./ detVec(B);
+            end
         case "piolaCurl"
             assert(nFun == dim);
             M = pagetranspose(BInv);
@@ -46,30 +57,37 @@ function val = mapVal(RefBase, map, ord, X, ElParm, RefKey)
     end
     val = zeros(nFun * nOutSlc, nBase, nPnt, nEnt);
     refVal = containers.Map(); % Values of derivatives of reference base functions at XRef, by multi-index.
-    for iOut = 1:nOutSlc
-        for iFun = 1:nFun
-            alpha = ord(:, iFun, iOut);
-            if ~all(alpha >= 0)
-                continue;
+    % Entries with the same multi-index share the derivative D of v_ref o toRef (e.g. divergence of rows of a matrix).
+    alphas = reshape(ord, dim, nFun * nOutSlc);
+    isVal = all(alphas >= 0, 1);
+    [uAlphas, ~, iAlpha] = unique(alphas(:, isVal)', "rows");
+    iEntry = find(isVal);
+    for iU = 1:size(uAlphas, 1)
+        alpha = uAlphas(iU, :)';
+        % Directions of derivative, e.g. alpha = [1; 0; 2] -> [1, 3, 3].
+        dirs = repelem(1:dim, alpha);
+        n = length(dirs);
+        % D(:, i, p, e): derivative of (all components of) v_ref o toRef, summed over sequences of reference
+        % directions l_1, ..., l_n with coefficient prod_k (B^{-1})_{l_k, dirs(k)}.
+        D = zeros(nFun, nBase, nPnt, nEnt);
+        for iSeq = 1:dim ^ n
+            seq = seqIdx(iSeq, dim, n);
+            coef = ones(1, 1, 1, nEnt);
+            for k = 1:n
+                coef = coef .* reshape(BInv(seq(k), dirs(k), :), 1, 1, 1, nEnt);
             end
-            % Directions of derivative, e.g. alpha = [1; 0; 2] -> [1, 3, 3].
-            dirs = repelem(1:dim, alpha);
-            n = length(dirs);
-            % D(:, i, p, e): derivative of (all components of) v_ref o toRef, summed over sequences of reference
-            % directions l_1, ..., l_n with coefficient prod_k (B^{-1})_{l_k, dirs(k)}.
-            D = zeros(nFun, nBase, nPnt, nEnt);
-            for iSeq = 1:dim ^ n
-                seq = seqIdx(iSeq, dim, n);
-                coef = ones(1, 1, 1, nEnt);
-                for k = 1:n
-                    coef = coef .* reshape(BInv(seq(k), dirs(k), :), 1, 1, 1, nEnt);
-                end
-                beta = accumarray(seq(:), 1, [dim, 1]);
-                D = D + coef .* refDif(beta);
+            beta = accumarray(seq(:), 1, [dim, 1]);
+            D = D + coef .* refDif(beta);
+        end
+        for iE = iEntry(iAlpha == iU)
+            % Entry iE = iFun + (iOut - 1) * nFun: mapped component iFun is sum_i M(iFun, i) * D(i, ...).
+            iFun = mod(iE - 1, nFun) + 1;
+            if isequal(map, "affine")
+                val(iE, :, :, :) = D(iFun, :, :, :);
+            else
+                Mrow = reshape(M(iFun, :, :), nFun, 1, 1, nEnt);
+                val(iE, :, :, :) = sum(Mrow .* D, 1);
             end
-            % Mapped component iFun: sum_i M(iFun, i) * D(i, ...).
-            Mrow = reshape(M(iFun, :, :), nFun, 1, 1, nEnt);
-            val(iFun + (iOut - 1) * nFun, :, :, :) = sum(Mrow .* D, 1);
         end
     end
     % Nested functions.
@@ -113,7 +131,9 @@ function funH = refHandle(RefBase, beta, RefKey)
         for jFun = 1:nFun
             f = fun(jFun);
             for iVar = 1:length(var)
-                f = diff(f, var(iVar), beta(iVar));
+                if beta(iVar) > 0
+                    f = diff(f, var(iVar), beta(iVar));
+                end
             end
             funs{jFun + (iBase - 1) * nFun} = f;
         end
