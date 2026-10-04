@@ -24,6 +24,8 @@ classdef FE
         % If dim(FS) = 3, function space consists of matrix-valued functions spanned by FS(:,:,i).
         DoFs (1, :) DoF = NdDoF.empty; % Degrees of freedom.
         base (1, :) Fcn; % Base function.
+        RefBase (1, :) Fcn; % Base function on reference element before mapping (empty if map is "none").
+        RefKey (1, 1) string = ""; % Key of reference base functions (map and expressions), used to cache them in `mapVal`.
         map {mustBeMember(map, ["none", "affine", "piolaDiv", "piolaCurl"])} = "none"; % Mapping of base functions.
         % none: invert DoF matrix on general element symbolically.
         % affine: invert DoF matrix on reference element, then compose base functions with transformation to reference element.
@@ -59,7 +61,10 @@ classdef FE
             FE.FS = FS;
             FE.DoFs = DoFs;
             FE.map = options.map;
-            FE.base = genBase(FE);
+            [FE.base, FE.RefBase] = genBase(FE);
+            if ~isempty(FE.RefBase)
+                FE.RefKey = FE.map + "|" + strjoin(arrayfun(@(f) char(f.fun), FE.RefBase, "UniformOutput", false), ";");
+            end
         end
         % Get functions.
         function nDoF = get.nDoF(FE)
@@ -97,8 +102,8 @@ classdef FE
     end
     % Private functions.
     methods (Access = private)
-        function base = genBase(FE)
-            % FE.genBase: generate base functions.
+        function [base, RefBase] = genBase(FE)
+            % FE.genBase: generate base functions (and base functions on reference element if mapped).
             FSFcn(1:FE.nDoF) = Fcn.cst(0);
             for iFcn = 1:FE.nDoF
                 switch FE.elem
@@ -144,6 +149,17 @@ classdef FE
             end
             FSDoF = sym(zeros(FE.nDoF));
             for iDoF = 1:length(DoFs)
+                if ~isequal(FE.map, "none") && isa(DoFs(iDoF), "MoDoF")
+                    % Moments on reference element: numerical quadrature (exact for the polynomial integrands, see
+                    % `GInt` of DoF) of all functions at once, converted to rational numbers. Symbolic integration is
+                    % used if the values are not rational (e.g. no unit normal / tangent coefficient).
+                    DoFVal = reshape(DoFs(iDoF).evalBatch(FSFcn), [], FE.nDoF);
+                    [ratVal, isRat] = ratNum(DoFVal);
+                    if isRat
+                        FSDoF(DoFs.sub2ind(iDoF), :) = ratVal;
+                        continue;
+                    end
+                end
                 for iFcn = 1:FE.nDoF
                     DoFVal = DoFs(iDoF).eval(FSFcn(iFcn));
                     FSDoF(DoFs.sub2ind(iDoF), iFcn) = DoFVal(:);
@@ -158,6 +174,10 @@ classdef FE
                 else
                     base(iBase) = Fcn(BsDomn, sum(BsFS .* reshape(repmat(BsCoef(:, iBase).', [size(BsFS, 1) * size(BsFS, 2), 1]), size(BsFS)), 3)).simplify;
                 end
+            end
+            RefBase = Fcn.empty;
+            if ~isequal(FE.map, "none")
+                RefBase = base;
             end
             switch FE.map
                 case "affine"
@@ -184,6 +204,14 @@ classdef FE
     end
 end
 % Local functions.
+function [ratVal, isRat] = ratNum(val)
+    % ratNum: exact rational numbers (symbolic) for numerical values that are rational with small denominators.
+    tol = 1e-12;
+    val(abs(val) < tol) = 0;
+    [N, D] = rat(val, tol);
+    isRat = all(abs(val - N ./ D) < 1e-14 * max(1, abs(val)), "all") && all(D <= 1e6, "all");
+    ratVal = sym(N) ./ sym(D);
+end
 function checkProp(elem, FS, DoFs, map)
     % checkProp: check validity of properties.
     assert(size(FS, ndims(FS)) == cumDoF(DoFs));

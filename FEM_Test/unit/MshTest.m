@@ -118,6 +118,35 @@ classdef MshTest < matlab.unittest.TestCase
                     "AbsTol", 1e-14);
             end
         end
+        function splitMsh3D(tc)
+            msh0 = mshD3TS([0, 1, 0, 1, 0, 1], 2);
+            msh = mshSplit(msh0);
+            % Counts: one node, four edges, six faces per original element; each element split into four.
+            tc.verifyEqual([msh.nNode, msh.nEdge, msh.nFace, msh.nElem], ...
+                [msh0.nNode + msh0.nElem, msh0.nEdge + 4 * msh0.nElem, msh0.nFace + 6 * msh0.nElem, 4 * msh0.nElem]);
+            [flag, msg] = checkMsh(msh, "vol", 1);
+            tc.verifyTrue(flag, msg);
+            tc.verifyEqual(nnz(msh.node.type == 1i), msh0.nElem);
+            tc.verifyEqual(nnz(msh.edge.type == 1i), 4 * msh0.nElem);
+            tc.verifyEqual(nnz(msh.face.type == 1i), 6 * msh0.nElem);
+            % Barycenter is the 4th node of sub-elements of each original element.
+            tc.verifyEqual(msh.elem.node(4, :), msh0.nNode + repelem(1:msh0.nElem, 4));
+            for iElem = 1:msh0.nElem
+                tc.verifyEqual(msh.node.coord(:, msh0.nNode + iElem), mean(msh0.node.coord(:, msh0.elem.node(:, iElem)), 2), ...
+                    "AbsTol", 1e-14);
+            end
+            % Face 4 of sub-element is primal (i-th face of original element, same type), faces 1, 2, 3 are dual.
+            ElFace = abs(msh.elem.face);
+            tc.verifyTrue(all(msh.face.type(ElFace(1:3, :)) == 1i, "all"));
+            PrFace = ElFace(4, :);
+            OrgFace = abs(msh0.elem.face(:));
+            tc.verifyEqual(sort(msh.face.node(:, PrFace), 1), sort(msh0.face.node(:, OrgFace), 1));
+            tc.verifyEqual(real(msh.face.type(PrFace)), msh0.face.type(OrgFace'));
+            % Boundary faces are primal and keep their types.
+            for iType = 1:6
+                tc.verifyEqual(length(msh.bdEnt(2, iType)), length(msh0.bdEnt(2, iType)), sprintf("Face type %d.", iType));
+            end
+        end
         function checkCorrupt(tc)
             % checkMsh detects corrupted mesh data.
             msh0 = mshD2TS([0, 1, 0, 1], 2);

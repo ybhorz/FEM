@@ -31,8 +31,8 @@ function results = runTests(tag, options)
     figVis = get(groot, "DefaultFigureVisible");
     set(groot, "DefaultFigureVisible", "off");
     cleanup = onCleanup(@() set(groot, "DefaultFigureVisible", figVis));
-    % Cached finite elements are rebuilt in each run (the package may have changed).
-    clear stdFE
+    % Cached finite elements and function handles are rebuilt in each run (the package may have changed).
+    clear stdFE mapVal
     suite = TestSuite.fromFolder(fullfile(root, "FEM_Test", "unit"));
     if tag ~= "All"
         suite = suite.selectIf(HasTag(tag));

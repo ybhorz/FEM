@@ -115,10 +115,8 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                 ElParm = reshape(msh.node.coord(:, msh.elem.node(:, ElIdx)), msh.dim, msh.elem.nNode, nEnt);
                 ElPmArg = reshape(ElParm, [], 1, nEnt);
                 [X, Jac] = Auv.GInt.pntVec(ElParm);
-                trlBaseDiv = difBase(trl, Auv.trlOrd, trlName);
-                tstBaseDiv = difBase(tst, Auv.tstOrd, tstName);
-                TrlVal = evalBase(trlBaseDiv, "el_" + trlName, Auv.trlOrd, X, {}, {ElPmArg}, {}, {});
-                TstVal = evalBase(tstBaseDiv, "el_" + tstName, Auv.tstOrd, X, {}, {ElPmArg}, {}, {});
+                [TrlVal, trlSz, trlDomn] = elBase(trl, Auv.trlOrd, trlName, X, ElParm);
+                [TstVal, tstSz, tstDomn] = elBase(tst, Auv.tstOrd, tstName, X, ElParm);
                 ArgSym = {MshEnt(ElDomn).parm};
                 Args = {ElPmArg};
                 if isLin
@@ -157,10 +155,8 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                 TrlPmArg = reshape(trl.ElParm(:, :, iTrlEnt), [], 1, nEnt);
                 TstPmArg = reshape(tst.ElParm(:, :, iTstEnt), [], 1, nEnt);
                 [X, Jac] = Auv.GInt.pntVec([], nEnt);
-                trlBaseDiv = trcBase(trl, Auv.trlOrd, TrlPmSym, trlName);
-                tstBaseDiv = trcBase(tst, Auv.tstOrd, TstPmSym, tstName);
-                TrlVal = evalBase(trlBaseDiv, "ft_" + trlName, Auv.trlOrd, X, {FtPmSym, TrlPmSym}, {FtPmArg, TrlPmArg}, {}, {});
-                TstVal = evalBase(tstBaseDiv, "ft_" + tstName, Auv.tstOrd, X, {FtPmSym, TstPmSym}, {FtPmArg, TstPmArg}, {}, {});
+                [TrlVal, trlSz, trlDomn] = ftBase(trl, Auv.trlOrd, trlName, X, FtPmArg, TrlPmSym, TrlPmArg, iTrlEnt);
+                [TstVal, tstSz, tstDomn] = ftBase(tst, Auv.tstOrd, tstName, X, FtPmArg, TstPmSym, TstPmArg, iTstEnt);
                 ArgSym = {FtPmSym};
                 Args = {FtPmArg};
                 if isLin
@@ -179,13 +175,13 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                 tstL2G = tst.Lc2Gl(:, iTstEnt);
         end
         % Form with placeholders for values of base functions (and previous solution).
-        TrlSym = sym('trlVal', size(trlBaseDiv(1).fun));
-        TstSym = sym('tstVal', size(tstBaseDiv(1).fun));
-        trlPh = Fcn(trlBaseDiv(1).domn, TrlSym);
-        tstPh = Fcn(tstBaseDiv(1).domn, TstSym);
+        TrlSym = sym('trlVal', trlSz);
+        TstSym = sym('tstVal', tstSz);
+        trlPh = Fcn(trlDomn, TrlSym);
+        tstPh = Fcn(tstDomn, TstSym);
         if isLin
             PreSym = sym('preVal', size(preSolDiv(1).fun));
-            intFcn = Auv.form(coef, Fcn(trlBaseDiv(1).domn, PreSym), trlPh, tstPh) .* JNorm;
+            intFcn = Auv.form(coef, Fcn(trlDomn, PreSym), trlPh, tstPh) .* JNorm;
             intFun = intFcn.getFun("parm", ArgSym, "coef", {PreSym, TrlSym, TstSym}, "vec", true);
         else
             intFcn = Auv.form(coef, trlPh, tstPh) .* JNorm;
@@ -229,8 +225,7 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                 ElParm = reshape(msh.node.coord(:, msh.elem.node(:, ElIdx)), msh.dim, msh.elem.nNode, nEnt);
                 ElPmArg = reshape(ElParm, [], 1, nEnt);
                 [X, Jac] = Fv.GInt.pntVec(ElParm);
-                tstBaseDiv = difBase(tst, Fv.tstOrd, tstName);
-                TstVal = evalBase(tstBaseDiv, "el_" + tstName, Fv.tstOrd, X, {}, {ElPmArg}, {}, {});
+                [TstVal, tstSz, tstDomn] = elBase(tst, Fv.tstOrd, tstName, X, ElParm);
                 ArgSym = {MshEnt(ElDomn).parm};
                 Args = {ElPmArg};
                 if isLin
@@ -263,8 +258,7 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                 FtPmArg = reshape(msh.node.coord(:, facet.node(:, FtIdx)), [], 1, nEnt);
                 TstPmArg = reshape(tst.ElParm(:, :, iTstEnt), [], 1, nEnt);
                 [X, Jac] = Fv.GInt.pntVec([], nEnt);
-                tstBaseDiv = trcBase(tst, Fv.tstOrd, TstPmSym, tstName);
-                TstVal = evalBase(tstBaseDiv, "ft_" + tstName, Fv.tstOrd, X, {FtPmSym, TstPmSym}, {FtPmArg, TstPmArg}, {}, {});
+                [TstVal, tstSz, tstDomn] = ftBase(tst, Fv.tstOrd, tstName, X, FtPmArg, TstPmSym, TstPmArg, iTstEnt);
                 ArgSym = {FtPmSym};
                 Args = {FtPmArg};
                 if isLin
@@ -281,11 +275,11 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                 JNorm = Tfm(FtDomn).JNorm;
                 tstL2G = tst.Lc2Gl(:, iTstEnt);
         end
-        TstSym = sym('tstVal', size(tstBaseDiv(1).fun));
-        tstPh = Fcn(tstBaseDiv(1).domn, TstSym);
+        TstSym = sym('tstVal', tstSz);
+        tstPh = Fcn(tstDomn, TstSym);
         if isLin
             PreSym = sym('preVal', size(preSolDiv(1).fun));
-            intFcn = Fv.form(load, Fcn(tstBaseDiv(1).domn, PreSym), tstPh) .* JNorm;
+            intFcn = Fv.form(load, Fcn(tstDomn, PreSym), tstPh) .* JNorm;
             intFun = intFcn.getFun("parm", ArgSym, "coef", {PreSym, TstSym}, "vec", true);
         else
             intFcn = Fv.form(load, tstPh) .* JNorm;
@@ -325,6 +319,40 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
         end
         val = funH(X, ParmArg{:}, CoefArg{:});
         val = reshape(val, numel(fcns(1).fun), numel(fcns), size(val, 2), size(val, 3));
+    end
+    function [val, sDiv, domn] = elBase(fES, ord, name, X, ElParm)
+        % elBase: values of derivative `ord` of local base functions of element space at points X of elements with
+        % vertices ElParm (nComp x nBase x nPnt x nEnt), and size and domain of the derivative.
+        % Mapped base functions (see `FE`) are evaluated numerically from reference base functions (`mapVal`).
+        if isequal(fES.map, "none")
+            baseDiv = difBase(fES, ord, name);
+            val = evalBase(baseDiv, "el_" + name, ord, X, {}, {reshape(ElParm, [], 1, size(ElParm, 3))}, {}, {});
+            sDiv = size(baseDiv(1).fun);
+            domn = baseDiv(1).domn;
+        else
+            val = mapVal(fES.RefBase, fES.map, ord, X, ElParm, fES.RefKey);
+            sDiv = Fcn.difSize(size(fES.LcBase(1).fun), ord);
+            domn = ElDomn;
+        end
+    end
+    function [val, sDiv, domn] = ftBase(fES, ord, name, X, FtPmArg, PmSym, PmArg, iEnt)
+        % ftBase: values of derivative `ord` of local base functions at points X of reference facet, traces from
+        % entities iEnt of FE space (nComp x nBase x nPnt x nEnt), and size and domain of the derivative.
+        % `FtPmArg`: vertices of facets; `PmSym`, `PmArg`: symbolic and batched parameters of the entities.
+        if isequal(fES.elem, ElDomn) && ~isequal(fES.map, "none")
+            % Mapped base functions are evaluated at physical points of facets.
+            nEnt = size(FtPmArg, 3);
+            FtParm = reshape(FtPmArg, msh.dim, facet.nNode, nEnt);
+            XPhy = pagemtimes(FtParm(:, 2:end, :) - FtParm(:, 1, :), X) + FtParm(:, 1, :);
+            val = mapVal(fES.RefBase, fES.map, ord, XPhy, fES.ElParm(:, :, iEnt), fES.RefKey);
+            sDiv = Fcn.difSize(size(fES.LcBase(1).fun), ord);
+            domn = FtRefDomn;
+        else
+            baseDiv = trcBase(fES, ord, PmSym, name);
+            val = evalBase(baseDiv, "ft_" + name, ord, X, {MshEnt(FtRefDomn).parm, PmSym}, {FtPmArg, PmArg}, {}, {});
+            sDiv = size(baseDiv(1).fun);
+            domn = baseDiv(1).domn;
+        end
     end
     function baseDiv = difBase(fES, ord, name)
         % difBase: derivative of local base functions on element, cached by `name` (FE space) and `ord`.

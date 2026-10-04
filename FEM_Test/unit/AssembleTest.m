@@ -303,6 +303,35 @@ classdef AssembleTest < matlab.unittest.TestCase
             % Shared (continuous) DoFs cannot be eliminated element by element.
             tc.verifyError(@() condSolve(Stiff, Load, [tc.P1_FES, trls(2:3)], 1), "MATLAB:assertion:failed");
         end
+        function condSolveSDG3D(tc)
+            % Velocity of SDG on Alfeld split mesh is eliminated macro element by macro element (DoFs on dual faces are
+            % shared inside macro elements); the result equals the solution of the full system.
+            msh = mshSplit(mshD3TS([0, 1, 0, 1, 0, 1], 1));
+            d0 = [0; 0; 0]; d0V = zeros(3); divV = eye(3); grad = cat(3, [1; 0; 0], [0; 1; 0], [0; 0; 1]);
+            UNV = MshEnt("D3F").UNV;
+            p = Fcn("D3", "x*y + z^2");
+            PrFace = find(msh.face.type ~= 1i);
+            DlFace = find(msh.face.type == 1i);
+            Uh = FES(msh, stdFE("SDG1V"));
+            Ph = FES(msh, stdFE("SDG1S"), BC(p, "node", nan, "face", msh.bdEnt(2, 1:6)));
+            trls = [Uh, Ph];
+            Auv = [DLF(msh, 3, Fcn.cst(1), d0V, d0V, "iTrl", 1, "iTst", 1, "GInt", GInt("D3T", 2)), ...
+                DLF(msh, 3, Fcn.cst(1), d0, divV, "iTrl", 2, "iTst", 1, "GInt", GInt("D3T", 2)), ...
+                DLF.interface(msh, 2, -UNV, d0, d0V, "EntIdx", PrFace, "iTrl", 2, "iTst", 1, "tstOpr", "jump", "GInt", GInt("D3F", 2)), ...
+                DLF(msh, 3, Fcn.cst(1), d0V, grad, "iTrl", 1, "iTst", 2, "GInt", GInt("D3T", 2)), ...
+                DLF.interface(msh, 2, -UNV, d0V, d0, "EntIdx", DlFace, "iTrl", 1, "iTst", 2, "tstOpr", "jump", "GInt", GInt("D3F", 2))];
+            f = -dif(p, [2; 0; 0]) - dif(p, [0; 2; 0]) - dif(p, [0; 0; 2]);
+            [Stiff, Load] = assemble(msh, trls, trls, Auv, SLF(msh, 3, f, d0, "iTst", 2, "GInt", GInt("D3T", 3)));
+            sol = condSolve(Stiff, Load, trls, 1);
+            tc.verifyEqual(sol, Stiff \ Load, "AbsTol", 1e-10);
+            % Linear solution (u = grad p constant) is reproduced exactly.
+            p = Fcn("D3", "1 + x - 2*y + 3*z");
+            Ph = FES(msh, stdFE("SDG1S"), BC(p, "node", nan, "face", msh.bdEnt(2, 1:6)));
+            [Stiff, Load] = assemble(msh, [Uh, Ph], [Uh, Ph], Auv, SLF(msh, 3, Fcn.cst(0), d0, "iTst", 2, "GInt", GInt("D3T", 1)));
+            [uh, ph] = FEF.multi([Uh, Ph], condSolve(Stiff, Load, [Uh, Ph], 1));
+            tc.verifyEqual(eNorm(msh, p, ph, Norm(msh, 3, d0, "GInt", GInt("D3T", 2))), 0, "AbsTol", 1e-10);
+            tc.verifyEqual(eNorm(msh, dif(p, grad), uh, Norm(msh, 3, d0V, "GInt", GInt("D3T", 2))), 0, "AbsTol", 1e-10);
+        end
         function patch3D(tc)
             msh = tc.msh3;
             grad = cat(3, [1; 0; 0], [0; 1; 0], [0; 0; 1]);

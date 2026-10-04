@@ -271,6 +271,52 @@ classdef FETest < matlab.unittest.TestCase
             tc.verifyError(@() FE("D3T", "[1,x,y,z]", MoDoF("D3", D3TElem, 2, Fcn.cst(1), [0; 0; 0], "GInt", GInt("D3F", 1)), ...
                 "map", "piolaDiv"), "MATLAB:assertion:failed");
         end
+        function mapValues(tc)
+            % Numerical evaluation of mapped base functions (mapVal) equals derivatives of symbolic base functions.
+            grad = cat(3, [1; 0; 0], [0; 1; 0], [0; 0; 1]);
+            gradV = cat(3, [1, 1, 1; 0, 0, 0; 0, 0, 0], [0, 0, 0; 1, 1, 1; 0, 0, 0], [0, 0, 0; 0, 0, 0; 1, 1, 1]);
+            UNV2 = MshEnt("D2L").UNV;
+            RT0_2D = FE("D2T", "[1,0; 0,1; x,y].'", MoDoF("D2", MshEnt("D2T").msh, 1, Fcn.cst(1), zeros(2), "coef", UNV2, ...
+                "orien", true, "GInt", GInt("D2L", 4)), "map", "piolaDiv");
+            cases = {stdFE("P2"), [0; 0; 0]; stdFE("P2"), grad; stdFE("P2"), [2; 0; 0]; stdFE("P2"), [0; 1; 1]; ...
+                stdFE("BDM1"), zeros(3); stdFE("BDM1"), eye(3); stdFE("BDM1"), gradV; ...
+                stdFE("NED1"), zeros(3); stdFE("NED1"), gradV; RT0_2D, zeros(2); RT0_2D, eye(2)};
+            for iCase = 1:size(cases, 1)
+                fE = cases{iCase, 1};
+                ord = cases{iCase, 2};
+                if isequal(fE.elem, "D3T")
+                    P = tc.P3T;
+                    bary = [0.1, 0.4, 0.25; 0.2, 0.1, 0.25; 0.3, 0.2, 0.25; 0.4, 0.3, 0.25];
+                else
+                    P = tc.P2T;
+                    bary = [0.2, 0.5, 0.1; 0.3, 0.1, 0.6; 0.5, 0.4, 0.3];
+                end
+                X = P * bary;
+                val = mapVal(fE.RefBase, fE.map, ord, X, P);
+                % Cached function handles (by key) give the same values.
+                tc.verifyNotEqual(fE.RefKey, "");
+                for iCall = 1:2
+                    tc.verifyEqual(mapVal(fE.RefBase, fE.map, ord, X, P, fE.RefKey), val, "AbsTol", 1e-14);
+                end
+                for iBase = 1:fE.nDoF
+                    fun = fE.base(iBase).dif(ord).getFun;
+                    for iPnt = 1:size(X, 2)
+                        ref = fun(X(:, iPnt), P);
+                        tc.verifyEqual(val(:, iBase, iPnt), ref(:), "AbsTol", 1e-10, sprintf("Case %d, base %d.", iCase, iBase));
+                    end
+                end
+                % Batch of two elements (second one reflected and translated) equals elements one by one.
+                P2 = P(:, [1, 3, 2, 4:end]) + 0.3;
+                X2 = P2 * bary;
+                val2 = mapVal(fE.RefBase, fE.map, ord, cat(3, X, X2), cat(3, P, P2));
+                tc.verifyEqual(val2(:, :, :, 1), val, "AbsTol", 1e-12);
+                tc.verifyEqual(val2(:, :, :, 2), mapVal(fE.RefBase, fE.map, ord, X2, P2), "AbsTol", 1e-12);
+            end
+            % Base functions without map have no reference base functions.
+            fE = FE("D3T", "[1,x,y,z]", NdDoF("D3", MshEnt("D3T").msh, 0, [], [0; 0; 0]));
+            tc.verifyEmpty(fE.RefBase);
+            tc.verifyEqual(fE.RefKey, "");
+        end
         function piolaCurl(tc)
             % 2D lowest order Nedelec: base functions with map = "piolaCurl" equal those with map = "none".
             D2TElem = MshEnt("D2T").msh;

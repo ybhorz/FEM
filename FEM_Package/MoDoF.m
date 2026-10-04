@@ -209,6 +209,47 @@ classdef MoDoF < DoF
                 val = simplify(sym(val));
             end
         end
+        function val = evalBatch(moDoF, fcns)
+            % MoDoF.evalBatch: evaluate moment DoF numerically on several functions at once (domain "D2" or "D3").
+            % val(i, j, k): DoF value of k-th function w.r.t. j-th test function on i-th mesh entity.
+            % For each test function, the integrands of all functions share one function handle (cf. `eval` with
+            % "valType" "num", which generates one handle per function).
+            arguments
+                moDoF MoDoF;
+                fcns (1, :) Fcn;
+            end
+            assert(ismember(moDoF.domn, ["D2", "D3"]));
+            nFcn = length(fcns);
+            nEnt = moDoF.nEnt;
+            val = zeros(nEnt, moDoF.nTst, nFcn);
+            if nEnt == 0
+                return;
+            end
+            EntDomn = entDomn(moDoF.domn, moDoF.EntDim);
+            EntRefDomn = MshEnt.getInfo(EntDomn).dual;
+            if moDoF.EntDim == moDoF.msh.dim
+                JFcn = Tfm(EntDomn).JDet;
+            else
+                JFcn = Tfm(EntDomn).JNorm;
+            end
+            EntNode = moDoF.msh.ent(moDoF.EntDim).node;
+            EntPmArg = reshape(double(moDoF.msh.node.coord(:, EntNode(:, moDoF.EntIdx))), [], 1, nEnt);
+            coef = moDoF.coef.tfm(EntRefDomn);
+            fcnDiv(1:nFcn) = Fcn.cst(0);
+            for iFcn = 1:nFcn
+                checkFcn(moDoF.domn, moDoF.msh.type, moDoF.EntDim, moDoF.ord, fcns(iFcn));
+                fcnDiv(iFcn) = fcns(iFcn).dif(moDoF.ord).tfm(EntRefDomn);
+            end
+            for iTst = 1:moDoF.nTst
+                intFcns(1:nFcn) = Fcn.cst(0);
+                for iFcn = 1:nFcn
+                    intFcns(iFcn) = moDoF.form(coef, fcnDiv(iFcn), moDoF.tst(iTst)) .* JFcn;
+                end
+                intFun = intFcns.getFun("vec", true);
+                V = moDoF.GInt.evalVec(@(x) intFun(x, EntPmArg), [], nEnt);
+                val(:, iTst, :) = reshape(V.', nEnt, 1, nFcn);
+            end
+        end
     end
 end
 %% Local functions.

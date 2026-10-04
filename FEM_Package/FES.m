@@ -4,6 +4,9 @@ classdef FES
         msh Msh; % Mesh.
         elem {mustBeMember(elem, ["VOID", "D2T", "D2LR", "D3T", "D3FR"])} = "VOID"; % Element type.
         LcBase (1, :) Fcn; % Local base function.
+        map {mustBeMember(map, ["none", "affine", "piolaDiv", "piolaCurl"])} = "none"; % Mapping of base functions (see `FE`).
+        RefBase (1, :) Fcn; % Base function on reference element before mapping (empty if map is "none").
+        RefKey (1, 1) string = ""; % Key of reference base functions (see `FE`).
         ElParm (:, :, :); % Parameter of base function on each element.
         % ElParm(:, :, i): parameter for i-th element.
         GlDoFs (1, :) DoF = NdDoF.empty; % Global degrees of freedom.
@@ -36,6 +39,9 @@ classdef FES
             FES.msh = msh;
             FES.elem = fE.elem;
             FES.LcBase = fE.base;
+            FES.map = fE.map;
+            FES.RefBase = fE.RefBase;
+            FES.RefKey = fE.RefKey;
             switch FES.elem
                 case {"D2T", "D3T"}
                     % FES.ElParm = zeros(msh.dim, msh.elem.nNode, msh.nElem);
@@ -143,22 +149,33 @@ classdef FES
                         end
                     end
                 case "MoDoF"
+                    % Test functions are compared numerically at points of the reference face (no symmetry).
                     var = MshEnt.getInfo("D3R2").var;
-                    barG = [1 - var(1) - var(2); var(1); var(2)];
-                    tstFun = sym(zeros(1, nSamp));
+                    pnt = [0.21, 0.13, 0.52, 0.34; 0.17, 0.61, 0.25, 0.08];
+                    nPnt = size(pnt, 2);
+                    barG = [1 - sum(pnt, 1); pnt];
+                    tstFun = cell(1, nSamp);
+                    tstVal = zeros(nSamp, nPnt);
                     for iSamp = 1:nSamp
                         assert(ismember(LcDoF.tst(iSamp).domn, ["VOID", "D3R2", "D3FR"]));
-                        tstFun(iSamp) = LcDoF.tst(iSamp).fun;
+                        tstFun{iSamp} = matlabFunction(LcDoF.tst(iSamp).fun, "Vars", {var});
+                        for iPnt = 1:nPnt
+                            tstVal(iSamp, iPnt) = tstFun{iSamp}(pnt(:, iPnt));
+                        end
                     end
+                    tol = 1e-10 * max(1, max(abs(tstVal), [], "all"));
                     for c = 1:6
-                        % Local coordinates (lambda_L(2), lambda_L(3)) in terms of global coordinates.
-                        varL = barG(P(c, 2:3));
+                        % Local coordinates (lambda_L(2), lambda_L(3)) = (lambda_G(P(c, 2)), lambda_G(P(c, 3))).
+                        pntL = barG(P(c, 2:3), :);
                         for iSamp = 1:nSamp
-                            tstL = subs(tstFun(iSamp), var, varL);
+                            tstL = zeros(1, nPnt);
+                            for iPnt = 1:nPnt
+                                tstL(iPnt) = tstFun{iSamp}(pntL(:, iPnt));
+                            end
                             isFound = false;
                             for jSamp = 1:nSamp
                                 for s = [1, -1]
-                                    if isequal(simplify(tstL - s * tstFun(jSamp)), sym(0))
+                                    if all(abs(tstL - s * tstVal(jSamp, :)) < tol)
                                         permTab(iSamp, c) = jSamp;
                                         sgnTab(iSamp, c) = s;
                                         isFound = true;

@@ -1,5 +1,5 @@
 classdef Poisson3DTest < matlab.unittest.TestCase
-    % Poisson3DTest: convergence of 3D Poisson solvers (CG, CR, DG) and smoke test of 3D examples.
+    % Poisson3DTest: convergence of 3D Poisson solvers (CG, CR, DG, MFE, HDG, SDG) and smoke test of 3D examples.
     % Exact solution u = sin(pi*x)*sin(pi*y)*sin(pi*z) + x*y*z on unit cube, mesh mshD3TS with nSub subdivisions.
     % Dirichlet boundary: faces x = 0, y = 0, z = 0; Neumann boundary: faces x = 1, y = 1, z = 1.
 
@@ -12,6 +12,8 @@ classdef Poisson3DTest < matlab.unittest.TestCase
     % MFE    | RT0-P0  | 4, 8  | 1, 1, 1 (|u-uh|_L2, |u-uh|_div, |p-ph|_L2) | 0.8, 0.8, 0.8
     % MFE    | BDM1-P0 | 4, 8  | 2, 1, 1                                    | 1.7, 0.8, 0.8
     % HDG    | P1-P1-P1| 4, 8  | 2, 2, 1.5 (|u-uh|_L2, |p-ph|_L2, |p-lh|_L2) | 1.7, 1.7, 1.3
+    % SDG    | SDG_1   | 4, 8  | 2, 1, 2, 1 (|u-uh|_L2, |u-uh|_div, |p-ph|_L2, |p-ph|_H1) | 1.7, 0.8, 1.7, 0.8
+    % SDG    | SDG_0   | 4, 8  | 1, -, 1, - (broken div / H1 norms of P0 do not converge) | 0.8, -, 0.8, -
     % |p-lh|_L2 is the unscaled L2 norm on all faces (total area ~ 1/h), hence order 2 - 1/2.
     % Measured on nSub = 4, 8 (R2025a): CG P1 1.70, 0.87; CG P2 2.97, 1.87; CR 1.91, 0.98; DG P1 1.74, 0.92.
 
@@ -64,6 +66,28 @@ classdef Poisson3DTest < matlab.unittest.TestCase
             % Example (nSub = 4) prints the same errors.
             exDir = fullfile(fileparts(fileparts(fileparts(mfilename("fullpath")))), "FEM_Example");
             tc.verifyEqual(runExample(exDir, "Poisson_HDG_3D"), err(1, :), "RelTol", 1e-5);
+        end
+        function SDG(tc)
+            nSubs = [4, 8];
+            minRates = {[0.8, nan, 0.8, nan], [1.7, 0.8, 1.7, 0.8]};
+            for k = [0, 1]
+                err = zeros(2, 4);
+                for iSub = 1:2
+                    tic;
+                    err(iSub, :) = solveSDG(k, nSubs(iSub));
+                    fprintf("SDG_%d, nSub = %d: |u-uh|_L2 = %e, |u-uh|_div = %e, |p-ph|_L2 = %e, |p-ph|_H1 = %e (%.1f s)\n", ...
+                        k, nSubs(iSub), err(iSub, :), toc);
+                end
+                rate = log2(err(1, :) ./ err(2, :));
+                fprintf("SDG_%d: rate |u-uh|_L2 = %.2f, |u-uh|_div = %.2f, |p-ph|_L2 = %.2f, |p-ph|_H1 = %.2f\n", k, rate);
+                isChk = ~isnan(minRates{k + 1});
+                tc.verifyGreaterThan(rate(isChk), minRates{k + 1}(isChk), sprintf("SDG_%d", k));
+                if k == 1
+                    % Example (SDG_1, nSub = 4) prints the same errors.
+                    exDir = fullfile(fileparts(fileparts(fileparts(mfilename("fullpath")))), "FEM_Example");
+                    tc.verifyEqual(runExample(exDir, "Poisson_SDG_3D"), err(1, :), "RelTol", 1e-5);
+                end
+            end
         end
         function example(tc)
             % 3D examples (nSub = 4) run and print the same errors as `solvePoisson` with nSub = 4.
@@ -217,6 +241,48 @@ function err = solveHDG(nSub)
     err = [eNorm(msh, u, uh, Norm(msh, 3, d0_u, "GInt", GInt("D3T", 4))), ...
         eNorm(msh, p, ph, Norm(msh, 3, d0_p, "GInt", GInt("D3T", 4))), ...
         eNorm(msh, p, lh, Norm(msh, 2, d0_l, "GInt", GInt("D3F", 4)))];
+end
+function err = solveSDG(k, nSub)
+    % solveSDG: solve 3D Poisson equation in mixed form by SDG_k on Alfeld split mesh (same scheme as Poisson_SDG_3D) and
+    % return errors [|u-uh|_L2, |u-uh|_div, |p-ph|_L2, |p-ph|_H1] (broken norms, see the example).
+    p = Fcn("D3", "sin(pi*x)*sin(pi*y)*sin(pi*z)+x*y*z");
+    d0_p = [0; 0; 0]; grad_p = cat(3, [1; 0; 0], [0; 1; 0], [0; 0; 1]);
+    u = dif(p, grad_p);
+    d0_u = zeros(3); div_u = eye(3);
+    f = -sum(dif(u, div_u));
+    UNV = MshEnt("D3F").UNV;
+    hF = MshEnt("D3F").area .^ (1/2);
+    msh = mshSplit(mshD3TS([0, 1, 0, 1, 0, 1], nSub));
+    DirFace = msh.bdEnt(2, [1, 3, 5]);
+    NeuFace = msh.bdEnt(2, [2, 4, 6]);
+    PrFace = find(ismember(msh.face.type, 0:6));
+    PrOFace = find(ismember(msh.face.type, 0));
+    DlFace = find(ismember(msh.face.type, 1i));
+    if k == 0
+        Uh = FES(msh, stdFE("SDG0V"));
+        Ph = FES(msh, stdFE("SDG0S"), BC(p, "face", DirFace));
+    else
+        Uh = FES(msh, stdFE("SDG1V"));
+        Ph = FES(msh, stdFE("SDG1S"), BC(p, "node", nan, "face", DirFace));
+    end
+    ord = 1;
+    Auv = [DLF(msh, 3, Fcn.cst(1), d0_u, d0_u, "iTrl", 1, "iTst", 1, "GInt", GInt("D3T", ord * 2)), ...
+        DLF(msh, 3, Fcn.cst(1), d0_p, div_u, "iTrl", 2, "iTst", 1, "GInt", GInt("D3T", ord * 2)), ...
+        DLF.interface(msh, 2, -UNV, d0_p, d0_u, "EntIdx", PrFace, "iTrl", 2, "iTst", 1, "tstOpr", "jump", "GInt", GInt("D3F", ord * 2)), ...
+        DLF(msh, 3, Fcn.cst(1), d0_u, grad_p, "iTrl", 1, "iTst", 2, "GInt", GInt("D3T", ord * 2)), ...
+        DLF.interface(msh, 2, -UNV, d0_u, d0_p, "EntIdx", DlFace, "iTrl", 1, "iTst", 2, "tstOpr", "jump", "GInt", GInt("D3F", ord * 2))];
+    Fq = [SLF(msh, 3, f, d0_p, "iTst", 2, "GInt", GInt("D3T", 2 + ord)), ...
+        SLF(msh, 2, dot(u, UNV), d0_p, "iTst", 2, "EntIdx", NeuFace, "GInt", GInt("D3F", 2 + ord))];
+    [Stiff, Load] = assemble(msh, [Uh, Ph], [Uh, Ph], Auv, Fq);
+    [uh, ph] = FEF.multi([Uh, Ph], condSolve(Stiff, Load, [Uh, Ph], 1));
+    divForm = @(coef, fcn, pow) abs(sum(coef .* fcn)) .^ pow;
+    err = [eNorm(msh, u, uh, Norm(msh, 3, d0_u, "GInt", GInt("D3T", (1 + ord) * 2))), ...
+        eNorm(msh, u, uh, [Norm(msh, 3, div_u, "form", divForm, "GInt", GInt("D3T", ord * 2)), ...
+        Norm(msh, 2, d0_u, "EntIdx", PrOFace, "coef", [hF \ 1, UNV], "form", @(coef, fcn, pow) coef(1) .* abs(dot(coef(2), fcn)) .^ pow, ...
+        "fcnOpr", "jump", "GInt", GInt("D3F", ord * 2))]), ...
+        eNorm(msh, p, ph, Norm(msh, 3, d0_p, "GInt", GInt("D3T", (1 + ord) * 2))), ...
+        eNorm(msh, p, ph, [Norm(msh, 3, grad_p, "GInt", GInt("D3T", ord * 2)), ...
+        Norm(msh, 2, d0_p, "EntIdx", DlFace, "coef", hF \ 1, "fcnOpr", "jump", "GInt", GInt("D3F", ord * 2))])];
 end
 function err = runExample(exDir, exName)
     % runExample: run example script and extract printed error norms, e.g. "|u-uh|_L2: 1.234567e-03".

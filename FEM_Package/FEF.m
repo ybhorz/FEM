@@ -7,6 +7,9 @@ classdef FEF < Fcn
         % ElParm(:, :, i): parameter for i-th element.
         ElCoef (:, :); % Coefficient of function on each element.
         % ElCoef(:, i): coefficient for i-th element.
+        map {mustBeMember(map, ["none", "affine", "piolaDiv", "piolaCurl"])} = "none"; % Mapping of base functions (see `FE`).
+        RefBase (1, :) Fcn; % Base function on reference element before mapping (empty if map is "none").
+        RefKey (1, 1) string = ""; % Key of reference base functions (see `FE`).
     end
     properties (Dependent)
         sElParm (1, 2); % Size of parameter on one element.
@@ -28,6 +31,9 @@ classdef FEF < Fcn
             FEF.elem = fES.elem;
             FEF.ElParm = fES.ElParm;
             FEF.ElCoef = reshape(DoFVal(abs(fES.Lc2Gl)), size(abs(fES.Lc2Gl))) .* sign(fES.Lc2Gl);
+            FEF.map = fES.map;
+            FEF.RefBase = fES.RefBase;
+            FEF.RefKey = fES.RefKey;
         end
         % Get functions.
         function sElParm = get.sElParm(FEF)
@@ -53,7 +59,7 @@ classdef FEF < Fcn
             arguments (Output)
                 fcn FEF;
             end
-            assert(isEqualProp(fcn1, fcn2, "domn", "fun", "coef", "elem", "ElParm"));
+            assert(isEqualProp(fcn1, fcn2, "domn", "fun", "coef", "elem", "ElParm", "map"));
             fcn = fcn1;
             fcn.ElCoef = fcn1.ElCoef - fcn2.ElCoef;
         end

@@ -264,6 +264,40 @@ classdef FESTest < matlab.unittest.TestCase
             fES = FES(msh, stdFE("TP1"), BC(fcn, "face", BdFace));
             tc.verifyEqual(fES.BC.DoFIdx, [BdFace, 120 + BdFace, 240 + BdFace]);
         end
+        function SDG_3D(tc)
+            % SDG elements on Alfeld split mesh: scalar continuous on interior primal faces, normal component of vector
+            % continuous on dual faces.
+            msh = mshSplit(mshD3TS([0, 1, 0, 1, 0, 1], 1));
+            PrOFace = find(msh.face.type == 0);
+            DlFace = find(msh.face.type == 1i);
+            nPr = nnz(msh.face.type ~= 1i);
+            nDl = length(DlFace);
+            % SDG_0.
+            fES = FES(msh, stdFE("SDG0S"));
+            tc.verifyEqual(fES.nGlDoF, nPr);
+            verifyShare(tc, fES, stdFE("SDG0S"));
+            verifyProj(tc, fES, Fcn("D3", "2"));
+            fES = FES(msh, stdFE("SDG0V"));
+            tc.verifyEqual(fES.nGlDoF, nDl);
+            verifyProj(tc, fES, Fcn("D3", "[1; -2; 3]"));
+            verifyFaceCont(tc, fES, DlFace, true);
+            % SDG_1.
+            fES = FES(msh, stdFE("SDG1S"));
+            tc.verifyEqual(fES.nGlDoF, 3 * nPr + msh.nElem);
+            verifyShare(tc, fES, stdFE("SDG1S"));
+            verifyProj(tc, fES, Fcn("D3", "1 + 2*x - y + 3*z"));
+            verifyFaceCont(tc, fES, PrOFace, false);
+            fES = FES(msh, stdFE("SDG1V"));
+            tc.verifyEqual(fES.nGlDoF, 3 * nDl + 3 * msh.nElem);
+            verifyProj(tc, fES, Fcn("D3", "[1 + 2*x - y; z - 3*x + 1; x + y + 2*z]"));
+            verifyFaceCont(tc, fES, DlFace, true);
+            % Not continuous on the other faces: scalar jumps on some dual face, normal component on some primal face.
+            rng(7);
+            fEF = FEF(FES(msh, stdFE("SDG1S")), rand(3 * nPr + msh.nElem, 1));
+            tc.verifyGreaterThan(maxJump(fEF, DlFace, false), 1e-3);
+            fEF = FEF(FES(msh, stdFE("SDG1V")), rand(3 * nDl + 3 * msh.nElem, 1));
+            tc.verifyGreaterThan(maxJump(fEF, PrOFace, true), 1e-3);
+        end
         function faceSign3D(tc)
             % Oriented DoF on face: sign of base function follows orientation of face in element.
             fE = FE("D3T", "[1,x,y,z]", NdDoF("D3", MshEnt("D3T").msh, 2, [1/3; 1/3], [0; 0; 0], "orien", true), ...
@@ -323,6 +357,35 @@ function verifyProj(tc, fES, fcn)
             val = fun(pnt(:, iPnt), fEF.ElParm(:, :, iElem), fEF.ElCoef(:, iElem));
             exVal = exFun(pnt(:, iPnt));
             tc.verifyEqual(val(:), exVal(:), "AbsTol", 1e-10, sprintf("Element %d, point %d.", iElem, iPnt));
+        end
+    end
+end
+function verifyFaceCont(tc, fES, FcIdx, isNormal)
+    % verifyFaceCont: verify that for random DoF values, function (or its normal component if `isNormal`) from both
+    % sides of given interior faces agrees.
+    rng(5);
+    fEF = FEF(fES, rand(fES.nGlDoF, 1));
+    tc.verifyLessThan(maxJump(fEF, FcIdx, isNormal), 1e-12);
+end
+function jump = maxJump(fEF, FcIdx, isNormal)
+    % maxJump: maximal jump of function (or its normal component) across given interior faces at three points per face.
+    msh = fEF.msh;
+    fun = fEF.getFun;
+    jump = 0;
+    for iFace = FcIdx
+        FcNd = msh.node.coord(:, msh.face.node(:, iFace));
+        nor = cross(FcNd(:, 2) - FcNd(:, 1), FcNd(:, 3) - FcNd(:, 1));
+        nor = nor / norm(nor);
+        K = abs(msh.face.elem(:, iFace));
+        for bary = [0.2, 0.7, 0.1; 0.3, 0.1, 0.6; 0.5, 0.2, 0.3]
+            pnt = FcNd * bary;
+            v1 = fun(pnt, fEF.ElParm(:, :, K(1)), fEF.ElCoef(:, K(1)));
+            v2 = fun(pnt, fEF.ElParm(:, :, K(2)), fEF.ElCoef(:, K(2)));
+            if isNormal
+                jump = max(jump, abs(dot(v1 - v2, nor)));
+            else
+                jump = max(jump, max(abs(v1 - v2)));
+            end
         end
     end
 end

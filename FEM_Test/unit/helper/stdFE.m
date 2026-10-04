@@ -14,9 +14,14 @@ function fE = stdFE(name)
     % BDM1   | first order Brezzi-Douglas-Marini, DoFs are moments of normal component against barycentric coordinates of faces
     % NED1   | lowest order Nedelec (first kind), DoFs are tangential moments on edges
     % TP1    | linear trace on faces (reference face "D3FR"), DoFs at face vertices, not shared
+    % SDG0S  | scalar SDG_0 on Alfeld split (face 4 primal): constant, DoF at barycenter of face 4
+    % SDG0V  | vector SDG_0: constant, DoFs are normal fluxes through faces 1, 2, 3 (dual faces)
+    % SDG1S  | scalar SDG_1: linear, DoFs at vertices of face 4 (shared) and at vertex 4 (not shared)
+    % SDG1V  | vector SDG_1: linear, BDM1 moments on faces 1, 2, 3 (shared) and on face 4 (not shared)
 
     arguments (Input)
-        name (1, 1) string {mustBeMember(name, ["P0", "P1", "P2", "P3", "DG1", "CR", "RT0", "BDM1", "NED1", "TP1"])};
+        name (1, 1) string {mustBeMember(name, ["P0", "P1", "P2", "P3", "DG1", "CR", "RT0", "BDM1", "NED1", "TP1", ...
+            "SDG0S", "SDG0V", "SDG1S", "SDG1V"])};
     end
     arguments (Output)
         fE FE;
@@ -33,6 +38,8 @@ function fE = stdFE(name)
     d0 = [0; 0; 0];
     P2FS = "[1,x,y,z,x^2,y^2,z^2,x*y,y*z,z*x]";
     P3FS = "[1,x,y,z,x^2,y^2,z^2,x*y,y*z,z*x,x^3,y^3,z^3,x^2*y,x^2*z,y^2*x,y^2*z,z^2*x,z^2*y,x*y*z]";
+    UNV = MshEnt("D3F").UNV;
+    FcBar = [Fcn("D3R2", "1 - s - t"), Fcn("D3R2", "s"), Fcn("D3R2", "t")];
     switch name
         case "P0"
             fE = FE("D3T", "1", NdDoF("D3", D3TElem, 3, [1/4; 1/4; 1/4], d0), "map", "affine");
@@ -57,6 +64,19 @@ function fE = stdFE(name)
         case "NED1"
             fE = FE("D3T", "[1,0,0; 0,1,0; 0,0,1; 0,-z,y; z,0,-x; -y,x,0].'", MoDoF("D3", D3TElem, 1, Fcn.cst(1), zeros(3), ...
                 "coef", MshEnt("D3L").UTV, "orien", true, "GInt", GInt("D3L", 1)), "map", "piolaCurl");
+        case "SDG0S"
+            fE = FE("D3T", "1", NdDoF("D3", D3TElem, 2, [1/3; 1/3], d0, "EntIdx", 4), "map", "affine");
+        case "SDG0V"
+            fE = FE("D3T", FE.repFS("1", [3, 1]), MoDoF("D3", D3TElem, 2, Fcn.cst(1), zeros(3), "coef", UNV, ...
+                "EntIdx", [1, 2, 3], "orien", true, "GInt", GInt("D3F", 1)), "map", "piolaDiv");
+        case "SDG1S"
+            fE = FE("D3T", "[1,x,y,z]", [NdDoF("D3", D3TElem, 2, [0, 1, 0; 0, 0, 1], d0, "EntIdx", 4), ...
+                NdDoF("D3", D3TElem, 0, [], d0, "EntIdx", 4, "share", false)], "map", "affine");
+        case "SDG1V"
+            fE = FE("D3T", FE.repFS("[1,x,y,z]", [3, 1]), ...
+                [MoDoF("D3", D3TElem, 2, FcBar, zeros(3), "coef", UNV, "EntIdx", [1, 2, 3], "orien", true, "GInt", GInt("D3F", 2)), ...
+                MoDoF("D3", D3TElem, 2, FcBar, zeros(3), "coef", UNV, "EntIdx", 4, "orien", true, "share", false, ...
+                "GInt", GInt("D3F", 2))], "map", "piolaDiv");
         case "TP1"
             fE = FE("D3FR", "[1,s,t]", NdDoF("D3R2", MshEnt("D3FR").msh, 2, [0, 1, 0; 0, 0, 1], [0; 0], "share", false));
     end

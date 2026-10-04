@@ -754,6 +754,17 @@ classdef Fcn
     end
     %% Static functions.
     methods (Static)
+        function sDif = difSize(sFun, ord)
+            % Fcn.difSize: size of function value after `Fcn.dif` with order `ord`, for function value of size `sFun`.
+            if ndims(ord) == 2
+                sDif = sFun;
+            elseif prod(sFun) == 1
+                sDif = [size(ord, 3), 1];
+            else
+                assert(sFun(2) == 1);
+                sDif = [sFun(1), size(ord, 3)];
+            end
+        end
         function fcn = cst(val)
             % Fcn.cst: constant function.
             fcn = Fcn("VOID", sym(val));
