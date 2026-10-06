@@ -303,6 +303,17 @@ classdef AssembleTest < matlab.unittest.TestCase
             % Shared (continuous) DoFs cannot be eliminated element by element.
             tc.verifyError(@() condSolve(Stiff, Load, [tc.P1_FES, trls(2:3)], 1), "MATLAB:assertion:failed");
         end
+        function condSolveBrinkman3D(tc)
+            % Hybridized Brinkman SDG: velocity gradient eliminated by element, then velocity and tangential multiplier
+            % (trace space, boundary DoFs not eliminated) by macro element; one or two levels give the full solution.
+            sys = brinkmanSDG3D(1, 1);
+            ref = sys.Stiff \ sys.Load;
+            tc.verifyEqual(condSolve(sys.Stiff, sys.Load, sys.trls, {1, [2, 3]}), ref, "AbsTol", 1e-9);
+            tc.verifyEqual(condSolve(sys.Stiff, sys.Load, sys.trls, [1, 2, 3]), ref, "AbsTol", 1e-9);
+            tc.verifyEqual(condSolve(sys.Stiff, sys.Load, sys.trls, 1), ref, "AbsTol", 1e-9);
+            % Multiplier on primal faces connects macro elements: (u, gamma, lambda) is not local.
+            tc.verifyError(@() condSolve(sys.Stiff, sys.Load, sys.trls, {1, [2, 3, 4]}), "MATLAB:assertion:failed");
+        end
         function condSolveSDG3D(tc)
             % Velocity of SDG on Alfeld split mesh is eliminated macro element by macro element (DoFs on dual faces are
             % shared inside macro elements); the result equals the solution of the full system.

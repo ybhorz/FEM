@@ -119,6 +119,20 @@ classdef BCTest < matlab.unittest.TestCase
             % Face DoFs require boundary faces.
             tc.verifyError(@() FES(msh, fE, BC(g, "node", msh.bdEnt(0, 1:6))), "MATLAB:assertion:failed");
         end
+        function SingleDoF(tc)
+            g = Fcn("D2", "x^3 + y^3");
+            fE = FE("D2T", "[1,x,y,x^2,y^2,x*y]", [NdDoF("D2", MshEnt("D2T").msh, 0, [], [0; 0]), ...
+                NdDoF("D2", MshEnt("D2T").msh, 1, 1/2, [0; 0])]);
+            % Only single DoFs (one node and one edge midpoint), no entity asserts.
+            fES = FES(tc.msh, fE, BC(g, "DoF", [3, 9 + 5]));
+            tc.verifyEqual(fES.BC.DoFIdx, [3, 9 + 5]);
+            tc.verifyEqual(fES.BC.DoFVal, [evalNode(g, tc.msh.node.coord(:, 3)), evalNode(g, midPnt(tc.msh, 5))], "AbsTol", 1e-14);
+            % Together with boundary entities: the interior node is added.
+            InNode = find(tc.msh.node.type == 0);
+            fES = FES(tc.msh, fE, BC(g, "node", tc.BdNode, "edge", tc.BdEdge, "DoF", InNode));
+            tc.verifyEqual(fES.BC.DoFIdx, sort([tc.BdNode, InNode, 9 + tc.BdEdge]));
+            tc.verifyEqual(fES.BC.nDoF, 8 + 1 + 8);
+        end
         function TP1(tc)
             g = Fcn("D2", "x^2 + y^2");
             fES = FES(tc.msh, FE("D2LR", "[1,s]", NdDoF("D2R1", MshEnt("D2LR").msh, 1, [0, 1], 0)), BC(g, "edge", tc.BdEdge));

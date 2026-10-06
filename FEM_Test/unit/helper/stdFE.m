@@ -22,10 +22,13 @@ function fE = stdFE(name)
     %        | on faces 1, 2, 3 (shared) and on face 4 (not shared), rows mapped by contravariant Piola transformation
     % StSDG1V| vector SDG_1 of Stokes: linear, each component at vertices of face 4 (shared) and at vertex 4 (not shared)
     % StSDG1S| scalar SDG_1 of Stokes: linear, value at vertex 4 and at midpoints of edges [1, 4], [2, 4], [3, 4]
+    % DG1M   | matrix linear, each component at vertices, not shared (velocity gradient of hybridized Brinkman SDG)
+    % TP1V2  | linear trace with 2 components on faces (reference face "D3FR"), each component at face vertices
+    % TP1V3  | linear trace with 3 components on faces, each component at face vertices
 
     arguments (Input)
         name (1, 1) string {mustBeMember(name, ["P0", "P1", "P2", "P3", "DG1", "CR", "RT0", "BDM1", "NED1", "TP1", ...
-            "SDG0S", "SDG0V", "SDG1S", "SDG1V", "StSDG1M", "StSDG1V", "StSDG1S"])};
+            "SDG0S", "SDG0V", "SDG1S", "SDG1V", "StSDG1M", "StSDG1V", "StSDG1S", "DG1M", "TP1V2", "TP1V3"])};
     end
     arguments (Output)
         fE FE;
@@ -110,6 +113,23 @@ function fE = stdFE(name)
         case "StSDG1S"
             fE = FE("D3T", "[1,x,y,z]", [NdDoF("D3", D3TElem, 0, [], d0, "EntIdx", 4), ...
                 NdDoF("D3", D3TElem, 1, 1/2, d0, "EntIdx", [3, 5, 6])], "map", "affine");
+        case "DG1M"
+            DoFs = NdDoF.empty;
+            for iComp = 1:9
+                ord = nan(3, 9);
+                ord(:, iComp) = 0;
+                DoFs(end + 1) = NdDoF("D3", D3TElem, 0, [], ord, "share", false);
+            end
+            fE = FE("D3T", FE.repFS("[1,x,y,z]", [3, 3]), DoFs, "map", "affine");
+        case {"TP1V2", "TP1V3"}
+            % Component selected by constant coefficient (derivative order of trace DoF must be zero).
+            nComp = str2double(extractAfter(name, "TP1V"));
+            DoFs = NdDoF.empty;
+            for iComp = 1:nComp
+                DoFs(end + 1) = NdDoF("D3R2", MshEnt("D3FR").msh, 2, [0, 1, 0; 0, 0, 1], zeros(2, nComp), ...
+                    "coef", Fcn.cst(double(1:nComp == iComp)'), "share", false);
+            end
+            fE = FE("D3FR", FE.repFS("[1,s,t]", [nComp, 1]), DoFs);
         case "TP1"
             fE = FE("D3FR", "[1,s,t]", NdDoF("D3R2", MshEnt("D3FR").msh, 2, [0, 1, 0; 0, 0, 1], [0; 0], "share", false));
     end

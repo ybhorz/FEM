@@ -7,6 +7,7 @@ classdef BC
         node (1, :); % Index of boundary node.
         edge (1, :); % Index of boundary edge.
         face (1, :); % Index of boundary face (3D).
+        DoF (1, :); % Index of single DoFs (in the FE space) taking specified values, e.g. to fix pressure at one DoF.
         % Degree of freedom.
         DoFIdx (1, :); % Index of boundary DoF.
         DoFVal (1, :); % Value of boundary DoF.
@@ -22,11 +23,13 @@ classdef BC
                 options.node (1, :) = [];
                 options.edge (1, :) = [];
                 options.face (1, :) = [];
+                options.DoF (1, :) = [];
             end
             BC.fcn = fcn;
             BC.node = options.node;
             BC.edge = options.edge;
             BC.face = options.face;
+            BC.DoF = options.DoF;
         end
         % Get functions.
         function nDoF = get.nDoF(BC)
@@ -49,6 +52,14 @@ classdef BC
                 DoF = DoFs(iDoF);
                 assert(isscalar(BC.fcn(iDoF)));
                 val = DoF.eval(BC.fcn(iDoF), "valType", "num", "rawEval", true);
+                % Single DoFs of this group (`val(:)` is ordered as `DoFs.sub2ind`).
+                idx = DoFs.sub2ind(iDoF);
+                isSel = ismember(idx, BC.DoF);
+                BC.DoFIdx(idx(isSel)) = 1;
+                BC.DoFVal(idx(isSel)) = val(isSel);
+                if ~isempty(BC.DoF) && isempty([BC.node, BC.edge, BC.face])
+                    continue;
+                end
                 switch DoF.EntDim
                     case 0
                         assert(~isempty(BC.node));

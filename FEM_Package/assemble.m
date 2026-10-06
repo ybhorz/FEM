@@ -191,13 +191,17 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
         TstSym = sym('tstVal', tstSz);
         trlPh = Fcn(trlDomn, TrlSym);
         tstPh = Fcn(tstDomn, TstSym);
+        % Coefficients and Jacobian factor are evaluated once at Gauss points and enter the form as placeholders too,
+        % so that the integrand handle (called for every pair of base functions) does not repeat their expressions,
+        % e.g. unit normal and area factor of facets in terms of facet vertices.
+        [CfPh, CfSym, CfVal] = phCoef([coef, JNorm], X, ArgSym, Args, nEnt);
         if isLin
             PreSym = sym('preVal', size(preSolDiv(1).fun));
-            intFcn = Auv.form(coef, Fcn(trlDomn, PreSym), trlPh, tstPh) .* JNorm;
-            intFun = intFcn.getFun("parm", ArgSym, "coef", {PreSym, TrlSym, TstSym}, "vec", true);
+            intFcn = Auv.form(CfPh(1:end - 1), Fcn(trlDomn, PreSym), trlPh, tstPh) .* CfPh(end);
+            intFun = intFcn.getFun("parm", ArgSym, "coef", [CfSym, {PreSym, TrlSym, TstSym}], "vec", true);
         else
-            intFcn = Auv.form(coef, trlPh, tstPh) .* JNorm;
-            intFun = intFcn.getFun("parm", ArgSym, "coef", {TrlSym, TstSym}, "vec", true);
+            intFcn = Auv.form(CfPh(1:end - 1), trlPh, tstPh) .* CfPh(end);
+            intFun = intFcn.getFun("parm", ArgSym, "coef", [CfSym, {TrlSym, TstSym}], "vec", true);
         end
         [iTstBs, iTrlBs] = ndgrid(1:tst.nLcDoF, 1:trl.nLcDoF);
         nPair = numel(iTstBs);
@@ -209,15 +213,16 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
             m = numel(iTsts{1});
             S = reshape(permute(TstVal(:, iTsts{1}, :, :), [1, 3, 4, 2]), [], nPnt, nEnt * m);
             [XRep, ArgsRep, JacRep] = repEnt(X, Args, Jac, m);
+            CfRep = cellfun(@(val) repmat(val, 1, 1, m), CfVal, "UniformOutput", false);
             if isLin
                 PreRep = repmat(reshape(PreVal, [], nPnt, nEnt), 1, 1, m);
             end
             for jTrl = 1:trl.nLcDoF
                 T = repmat(reshape(TrlVal(:, jTrl, :, :), [], nPnt, nEnt), 1, 1, m);
                 if isLin
-                    F = intFun(XRep, ArgsRep{:}, PreRep, T, S);
+                    F = intFun(XRep, ArgsRep{:}, CfRep{:}, PreRep, T, S);
                 else
-                    F = intFun(XRep, ArgsRep{:}, T, S);
+                    F = intFun(XRep, ArgsRep{:}, CfRep{:}, T, S);
                 end
                 intVal(iTsts{1} + nTst * (jTrl - 1), :) = reshape(Auv.GInt.sumVec(F, JacRep), nEnt, m).';
             end
@@ -451,6 +456,31 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
     end
 end
 %% Local functions.
+function [CfPh, CfSym, CfVal] = phCoef(cfs, X, ArgSym, Args, nEnt)
+    % phCoef: placeholders for coefficient functions `cfs` (Fcn array), their symbols, and their values at points X of
+    % a batch of mesh entities (nComp x nPnt x nEnt, or nComp x 1 x nEnt if constant).
+    nCf = numel(cfs);
+    CfPh(1:nCf) = Fcn.cst(0);
+    CfSym = cell(1, nCf);
+    CfVal = cell(1, nCf);
+    for iCf = 1:nCf
+        cf = cfs(iCf);
+        CfSym{iCf} = sym(sprintf('cf%dVal', iCf), size(cf.fun));
+        CfPh(iCf) = Fcn(cf.domn, CfSym{iCf});
+        fun = cf.fun(:);
+        if isempty(symvar(fun))
+            CfVal{iCf} = repmat(double(fun), 1, 1, nEnt);
+        else
+            assert(~isempty(cf.var) && isempty(cf.coef));
+            comps = repmat(Fcn.cst(0), 1, numel(fun));
+            for iComp = 1:numel(fun)
+                comps(iComp) = Fcn(cf.domn, fun(iComp));
+            end
+            funH = comps.getFun("parm", ArgSym, "vec", true);
+            CfVal{iCf} = funH(X, Args{:});
+        end
+    end
+end
 function chunks = chunkIdx(n, sz)
     % chunkIdx: split 1:n into chunks (cell array, by column) such that a chunk holds about 2e7 values of size `sz` each.
     m = max(1, min(n, floor(2e7 / max(1, sz))));
