@@ -60,41 +60,28 @@ classdef BC
                 if ~isempty(BC.DoF) && isempty([BC.node, BC.edge, BC.face])
                     continue;
                 end
+                % Boundary entities of this group (rows of `val` and of `idx`).
                 switch DoF.EntDim
                     case 0
                         assert(~isempty(BC.node));
-                        for iEnt = 1:length(DoF.EntIdx)
-                            iNode = DoF.EntIdx(iEnt);
-                            if ismember(iNode, BC.node)
-                                idx = DoFs.sub2ind(iDoF, iEnt, 1:DoF.nSamp);
-                                BC.DoFIdx(idx) = 1;
-                                BC.DoFVal(idx) = val(iEnt, :);
-                            end
-                        end
+                        BdEnt = BC.node;
                     case 1
                         assert(~isempty(BC.edge));
-                        for iEnt = 1:length(DoF.EntIdx)
-                            iEdge = DoF.EntIdx(iEnt);
-                            if ismember(iEdge, BC.edge)
-                                idx = DoFs.sub2ind(iDoF, iEnt, 1:DoF.nSamp);
-                                BC.DoFIdx(idx) = 1;
-                                BC.DoFVal(idx) = val(iEnt, :);
-                            end
-                        end
+                        BdEnt = BC.edge;
                     case 2
                         % Face in 3D (element in 2D: no boundary condition).
-                        if DoF.msh.dim == 3
-                            assert(~isempty(BC.face));
-                            for iEnt = 1:length(DoF.EntIdx)
-                                iFace = DoF.EntIdx(iEnt);
-                                if ismember(iFace, BC.face)
-                                    idx = DoFs.sub2ind(iDoF, iEnt, 1:DoF.nSamp);
-                                    BC.DoFIdx(idx) = 1;
-                                    BC.DoFVal(idx) = val(iEnt, :);
-                                end
-                            end
+                        if DoF.msh.dim ~= 3
+                            continue;
                         end
+                        assert(~isempty(BC.face));
+                        BdEnt = BC.face;
+                    otherwise
+                        continue;
                 end
+                isEnt = ismember(DoF.EntIdx(:), BdEnt);
+                idx = reshape(idx, DoF.sDoF);
+                BC.DoFIdx(idx(isEnt, :)) = 1;
+                BC.DoFVal(idx(isEnt, :)) = val(isEnt, :);
             end
             BC.DoFIdx = find(BC.DoFIdx);
             BC.DoFVal = BC.DoFVal(BC.DoFIdx);

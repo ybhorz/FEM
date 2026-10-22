@@ -7,8 +7,9 @@ function sol = condSolve(Stiff, Load, FESs, iCond)
     % other DoFs is solved, and the eliminated DoFs are recovered. The result equals `Stiff \ Load` up to rounding.
     % Elimination in several levels: `iCond` is a cell array, e.g. {[1], [2, 3]} eliminates spaces 1 by their groups,
     % then spaces 2 and 3 by their groups from the Schur complement system.
-    % DoFs of a trace space (facets) belong to the elements connected to their facets. Boundary DoFs (`FES.BC`) are not
-    % eliminated (their rows are identity rows).
+    % DoFs of a trace space (facets) belong to the elements connected to their facets. Boundary DoFs (`FES.BC`, identity
+    % rows) take their given values and are removed from the system first (moved to the right-hand side), e.g. trace
+    % spaces defined on all facets but set to zero on the facets where they are not used.
     arguments (Input)
         Stiff (:, :); % Stiffness matrix (boundary conditions imposed).
         Load (:, 1); % Load vector.
@@ -29,7 +30,21 @@ function sol = condSolve(Stiff, Load, FESs, iCond)
     for iLev = 1:length(iCond)
         DoFGrps{iLev} = grpDoF(msh, FESs, iCond{iLev}, nDoF);
     end
-    sol = condLevel(Stiff, Load, DoFGrps);
+    % Boundary DoFs: values known (identity rows), moved to the right-hand side.
+    isBd = false(nDoF, 1);
+    for iFES = 1:length(FESs)
+        if ~isempty(FESs(iFES).BC)
+            isBd(FESs.cumDoF(iFES - 1) + FESs(iFES).BC.DoFIdx) = true;
+        end
+    end
+    sol = zeros(nDoF, 1);
+    sol(isBd) = Load(isBd);
+    BdVal = sol(isBd);
+    Load = Load(~isBd);
+    if any(BdVal)
+        Load = Load - Stiff(~isBd, isBd) * BdVal;
+    end
+    sol(~isBd) = condLevel(Stiff(~isBd, ~isBd), Load, cellfun(@(g) g(~isBd), DoFGrps, "UniformOutput", false));
 end
 %% Local functions.
 function DoFGrp = grpDoF(msh, FESs, iCond, nDoF)
