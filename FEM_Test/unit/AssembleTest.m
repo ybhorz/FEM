@@ -410,6 +410,44 @@ classdef AssembleTest < matlab.unittest.TestCase
             tc.verifyEqual(eNorm(msh, p, ph, Norm(msh, 3, d0, "GInt", GInt("D3T", 2))), 0, "AbsTol", 1e-10);
             tc.verifyEqual(eNorm(msh, dif(p, grad), uh, Norm(msh, 3, d0V, "GInt", GInt("D3T", 2))), 0, "AbsTol", 1e-10);
         end
+        function condSolveSingleDoF(tc)
+            % Eliminated spaces with only one local DoF per element (P0) or per facet (trace space on boundary edges):
+            % `Lc2Gl` is a row vector; the result equals the solution of the full system.
+            msh = tc.msh;
+            d0 = [0; 0]; grad = cat(3, [1; 0], [0; 1]);
+            % Continuous P1 (not eliminated) and P0: (grad u, grad v) + (u, v) + (p, v) + (u, q) - (p, q).
+            P0_FES = FES(msh, FE("D2T", "1", NdDoF("D2", MshEnt("D2T").msh, 2, [1/3; 1/3], d0)));
+            tc.verifySize(P0_FES.Lc2Gl, [1, msh.nElem]);
+            trls = [tc.P1_FES, P0_FES];
+            Auv = [DLF(msh, 2, Fcn.cst(1), grad, grad, "iTrl", 1, "iTst", 1, "GInt", GInt("D2T", 0)), ...
+                DLF(msh, 2, Fcn.cst(1), d0, d0, "iTrl", 1, "iTst", 1, "GInt", GInt("D2T", 2)), ...
+                DLF(msh, 2, Fcn.cst(1), d0, d0, "iTrl", 2, "iTst", 1, "GInt", GInt("D2T", 2)), ...
+                DLF(msh, 2, Fcn.cst(1), d0, d0, "iTrl", 1, "iTst", 2, "GInt", GInt("D2T", 2)), ...
+                DLF(msh, 2, Fcn.cst(-1), d0, d0, "iTrl", 2, "iTst", 2, "GInt", GInt("D2T", 2))];
+            Fv = [SLF(msh, 2, Fcn("D2", "x*y + 1"), d0, "iTst", 1, "GInt", GInt("D2T", 3)), ...
+                SLF(msh, 2, Fcn("D2", "x - y^2"), d0, "iTst", 2, "GInt", GInt("D2T", 3))];
+            [Stiff, Load] = assemble(msh, trls, trls, Auv, Fv);
+            tc.verifyEqual(condSolve(Stiff, Load, trls, 2), Stiff \ Load, "AbsTol", 1e-10);
+            % Trace space with one DoF per edge on some boundary edges (each belongs to one element), eliminated with
+            % the element space: (u, v) + <lambda, v> + <u, mu> - <lambda, mu> = (f, v) + <g, mu>.
+            EgSel = tc.BdEdge(1:2:end);
+            TP0Sel = FES(msh, FE("D2LR", "1", NdDoF("D2R1", MshEnt("D2LR").msh, 1, 1/2, 0)), BC.empty, "EntIdx", EgSel);
+            tc.verifySize(TP0Sel.Lc2Gl, [1, msh.nEdge]);
+            trls = [tc.DG1_FES, TP0Sel];
+            Auv = [DLF(msh, 2, Fcn.cst(1), d0, d0, "iTrl", 1, "iTst", 1, "GInt", GInt("D2T", 2)), ...
+                DLF(msh, 1, Fcn.cst(1), 0, d0, "iTrl", 2, "iTst", 1, "EntIdx", EgSel, "GInt", GInt("D2L", 2)), ...
+                DLF(msh, 1, Fcn.cst(1), 0, d0, "iTrl", 2, "iTst", -1, "EntIdx", EgSel, "GInt", GInt("D2L", 2)), ...
+                DLF(msh, 1, Fcn.cst(1), d0, 0, "iTrl", 1, "iTst", 2, "EntIdx", EgSel, "GInt", GInt("D2L", 2)), ...
+                DLF(msh, 1, Fcn.cst(1), d0, 0, "iTrl", -1, "iTst", 2, "EntIdx", EgSel, "GInt", GInt("D2L", 2)), ...
+                DLF(msh, 1, Fcn.cst(-1), 0, 0, "iTrl", 2, "iTst", 2, "EntIdx", EgSel, "GInt", GInt("D2L", 2))];
+            Fv = [SLF(msh, 2, Fcn("D2", "x*y + 1"), d0, "iTst", 1, "GInt", GInt("D2T", 3)), ...
+                SLF(msh, 1, Fcn("D2", "x^2 - y"), 0, "iTst", 2, "EntIdx", EgSel, "GInt", GInt("D2L", 3))];
+            [Stiff, Load] = assemble(msh, trls, trls, Auv, Fv);
+            ref = Stiff \ Load;
+            tc.verifyEqual(size(Stiff, 1), tc.DG1_FES.nGlDoF + length(EgSel));
+            tc.verifyEqual(condSolve(Stiff, Load, trls, [1, 2]), ref, "AbsTol", 1e-10);
+            tc.verifyEqual(condSolve(Stiff, Load, trls, 2), ref, "AbsTol", 1e-10);
+        end
         function patch3D(tc)
             msh = tc.msh3;
             grad = cat(3, [1; 0; 0], [0; 1; 0], [0; 0; 1]);

@@ -73,8 +73,9 @@ function DoFGrp = grpDoF(msh, FESs, iCond, nDoF)
         % Skip boundary DoFs and zero entries of `Lc2Gl` (facets not selected in a trace space).
         isVal = El > 0 & Dof > 0;
         isVal(isVal) = ~isBd(Dof(isVal));
-        DoFIdx = [DoFIdx; FESs.cumDoF(iFES - 1) + Dof(isVal)];
-        ElIdx = [ElIdx; El(isVal)];
+        % Column vectors (`Lc2Gl` is a row vector if each element or facet has only one local DoF).
+        DoFIdx = [DoFIdx; FESs.cumDoF(iFES - 1) + reshape(Dof(isVal), [], 1)];
+        ElIdx = [ElIdx; reshape(El(isVal), [], 1)];
     end
     Inc = sparse(DoFIdx, ElIdx, 1, nDoF, msh.nElem);
     ElGrp = conncomp(graph(double(Inc' * Inc ~= 0)));
