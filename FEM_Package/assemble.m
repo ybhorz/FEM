@@ -185,6 +185,9 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                 JNorm = Tfm(FtDomn).JNorm;
                 trlL2G = trl.Lc2Gl(:, iTrlEnt);
                 tstL2G = tst.Lc2Gl(:, iTstEnt);
+                % Facets not selected in a trace space (`FES` option `EntIdx`, zero columns of `Lc2Gl`) carry no DoFs:
+                % the form must be restricted to selected facets (`EntIdx` of the form).
+                assert(all(trlL2G ~= 0, "all") && all(tstL2G ~= 0, "all"));
         end
         % Form with placeholders for values of base functions (and previous solution).
         TrlSym = sym('trlVal', trlSz);
@@ -300,6 +303,8 @@ function [Stiff, Load] = assemble(msh, trls, tsts, Auvs, Fvs, options)
                 load = Fv.load.tfm(FtRefDomn);
                 JNorm = Tfm(FtDomn).JNorm;
                 tstL2G = tst.Lc2Gl(:, iTstEnt);
+                % Facets not selected in a trace space carry no DoFs (see `asmDLF`).
+                assert(all(tstL2G ~= 0, "all"));
         end
         TstSym = sym('tstVal', tstSz);
         tstPh = Fcn(tstDomn, TstSym);

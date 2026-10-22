@@ -91,6 +91,87 @@ classdef FESTest < matlab.unittest.TestCase
                 end
             end
         end
+        function TP1EntIdx(tc)
+            % Trace space with DoFs only on selected edges (option EntIdx): zero columns of Lc2Gl on the other edges.
+            msh = tc.msh;
+            fE = FE("D2LR", "[1,s]", NdDoF("D2R1", MshEnt("D2LR").msh, 1, [0, 1], 0));
+            BdEdge = find(msh.edge.type ~= 0);
+            EgSel = BdEdge([3, 1, 5, 1]); % Unsorted and repeated.
+            EgSel1 = sort(BdEdge([1, 3, 5]));
+            fES = FES(msh, fE, BC.empty, "EntIdx", EgSel);
+            tc.verifyEqual(fES.GlDoFs.EntIdx, EgSel1);
+            tc.verifyEqual(fES.nGlDoF, 6);
+            L2G = zeros(2, msh.nEdge);
+            L2G(:, EgSel1) = [1:3; 4:6];
+            tc.verifyEqual(fES.Lc2Gl, L2G);
+            % Projection: same coefficients as in the space on all edges on selected edges, zero on the others.
+            fcn = Fcn("D2", "x + 2*y - 1");
+            fEF = fES.proj(fcn);
+            fEFAll = FES(msh, fE).proj(fcn);
+            tc.verifyEqual(fEF.ElCoef(:, EgSel1), fEFAll.ElCoef(:, EgSel1), "AbsTol", 1e-14);
+            tc.verifyEqual(fEF.ElCoef(:, setdiff(1:msh.nEdge, EgSel1)), zeros(2, msh.nEdge - 3));
+            [fEF1, fEF2] = FEF.multi([fES, fES], [(1:6)'; (7:12)']);
+            tc.verifyEqual(fEF2.ElCoef(:, EgSel1), [7:9; 10:12]);
+            tc.verifyEqual(nnz(fEF1.ElCoef), 6);
+            % Boundary condition on edges (only the selected ones carry DoFs) and on single DoFs.
+            fES = FES(msh, fE, BC(fcn, "edge", BdEdge(3:end)), "EntIdx", EgSel);
+            tc.verifyEqual(fES.BC.DoFIdx, [2, 3, 5, 6]);
+            exFun = fcn.getFun;
+            tc.verifyEqual(fES.BC.DoFVal, [exFun(msh.node.coord(:, msh.edge.node(1, EgSel1(2:3)))), ...
+                exFun(msh.node.coord(:, msh.edge.node(2, EgSel1(2:3))))], "AbsTol", 1e-14);
+            fES = FES(msh, fE, BC(fcn, "DoF", 4), "EntIdx", EgSel);
+            tc.verifyEqual(fES.BC.DoFIdx, 4);
+            % Only for trace spaces, and indices must be facets.
+            tc.verifyError(@() FES(msh, FE("D2T", "[1,x,y]", NdDoF("D2", MshEnt("D2T").msh, 0, [], [0; 0])), BC.empty, ...
+                "EntIdx", 1), "MATLAB:assertion:failed");
+            tc.verifyError(@() FES(msh, fE, BC.empty, "EntIdx", msh.nEdge + 1), "MATLAB:assertion:failed");
+            % Empty EntIdx: all edges.
+            tc.verifyEqual(FES(msh, fE, BC.empty, "EntIdx", []).Lc2Gl, [1:16; 17:32]);
+        end
+        function evalPnt(tc)
+            % FE function at given points of given elements (and its gradient) reproduces a function in the space.
+            msh = tc.msh;
+            rng(5);
+            nPnt = 7;
+            ElIdx = randi(msh.nElem, 1, nPnt);
+            bar = rand(3, nPnt); bar = bar ./ sum(bar, 1);
+            X = zeros(2, nPnt);
+            for iPnt = 1:nPnt
+                X(:, iPnt) = msh.node.coord(:, msh.elem.node(:, ElIdx(iPnt))) * bar(:, iPnt);
+            end
+            fcn = Fcn("D2", "x^2 - 2*x*y + 3*y + 1");
+            fES = FES(msh, FE("D2T", "[1,x,y,x^2,y^2,x*y]", [NdDoF("D2", MshEnt("D2T").msh, 0, [], [0; 0]), ...
+                NdDoF("D2", MshEnt("D2T").msh, 1, 1/2, [0; 0])]));
+            fEF = fES.proj(fcn);
+            exFun = fcn.getFun;
+            tc.verifyEqual(fEF.evalPnt(X, ElIdx), exFun(X), "AbsTol", 1e-12);
+            grad = cat(3, [1; 0], [0; 1]);
+            gradFun = fcn.dif(grad).getFun;
+            exGrad = zeros(2, nPnt);
+            for iPnt = 1:nPnt
+                exGrad(:, iPnt) = gradFun(X(:, iPnt));
+            end
+            tc.verifyEqual(fEF.evalPnt(X, ElIdx, grad), exGrad, "AbsTol", 1e-12);
+            % Vector-valued, mapped space (3D).
+            msh3 = tc.msh3;
+            ElIdx = randi(msh3.nElem, 1, nPnt);
+            bar = rand(4, nPnt); bar = bar ./ sum(bar, 1);
+            X = zeros(3, nPnt);
+            for iPnt = 1:nPnt
+                X(:, iPnt) = msh3.node.coord(:, msh3.elem.node(:, ElIdx(iPnt))) * bar(:, iPnt);
+            end
+            fcn = Fcn("D3", "[x + 2*y - z; 3*z - x + 1; y]");
+            fEF = FES(msh3, stdFE("BDM1")).proj(fcn);
+            exVal = zeros(3, nPnt);
+            exFun = fcn.getFun;
+            for iPnt = 1:nPnt
+                exVal(:, iPnt) = exFun(X(:, iPnt));
+            end
+            tc.verifyEqual(fEF.evalPnt(X, ElIdx), exVal, "AbsTol", 1e-12);
+            % Element spaces only.
+            TP_FES = FES(msh, FE("D2LR", "[1,s]", NdDoF("D2R1", MshEnt("D2LR").msh, 1, [0, 1], 0)));
+            tc.verifyError(@() TP_FES.proj(Fcn("D2", "x")).evalPnt(X(1:2, :), 1:nPnt), "MATLAB:assertion:failed");
+        end
         function P0_3D(tc)
             fE = stdFE("P0");
             fES = FES(tc.msh3, fE);
@@ -263,6 +344,21 @@ classdef FESTest < matlab.unittest.TestCase
             BdFace = msh.bdEnt(2, 1:6);
             fES = FES(msh, stdFE("TP1"), BC(fcn, "face", BdFace));
             tc.verifyEqual(fES.BC.DoFIdx, [BdFace, 120 + BdFace, 240 + BdFace]);
+        end
+        function TP1EntIdx_3D(tc)
+            % Trace space on boundary faces only (3 samples per face, two components).
+            msh = tc.msh3;
+            BdFace = msh.bdEnt(2, 1:6);
+            fES = FES(msh, stdFE("TP1V2"), BC.empty, "EntIdx", BdFace);
+            tc.verifyEqual(fES.nGlDoF, 2 * 3 * 48);
+            tc.verifyTrue(all(fES.Lc2Gl(:, BdFace) > 0, "all"));
+            tc.verifyTrue(all(fES.Lc2Gl(:, setdiff(1:msh.nFace, BdFace)) == 0, "all"));
+            tc.verifyEqual(sort(reshape(fES.Lc2Gl(:, BdFace), [], 1)), (1:288)');
+            % Projection agrees with the space on all faces.
+            fcn = Fcn("D3", "[x + 2*y - z; 3*z - 1]");
+            fEF = fES.proj(fcn);
+            fEFAll = FES(msh, stdFE("TP1V2")).proj(fcn);
+            tc.verifyEqual(fEF.ElCoef(:, BdFace), fEFAll.ElCoef(:, BdFace), "AbsTol", 1e-13);
         end
         function SDG_3D(tc)
             % SDG elements on Alfeld split mesh: scalar continuous on interior primal faces, normal component of vector

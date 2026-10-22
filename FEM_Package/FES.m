@@ -13,6 +13,7 @@ classdef FES
         Lc2Gl (:, :); % Mapping from local DoFs to global DoFs.
         % Lc2Gl(i, j): global DoF index of i-th local DoF on j-th element.
         % Negative value indicates corresponding base function takes negative sign.
+        % Zero value: no DoF, the element (facet of a trace space) is not selected by option `EntIdx`.
         BC BC; % Boundary condition.
     end
     properties (Dependent)
@@ -22,11 +23,14 @@ classdef FES
     end
     methods
         %% Constructor.
-        function FES = FES(msh, fE, bC)
+        function FES = FES(msh, fE, bC, options)
             arguments
                 msh Msh;
                 fE FE;
                 bC BC = BC.empty;
+                options.EntIdx (1, :) = []; % Indices of facets carrying DoFs (trace space only; empty: all facets).
+                % Functions of the space vanish on the other facets: their columns of `Lc2Gl` are zero, forms on them
+                % are not allowed (assertion in `assemble`), and boundary conditions on them are ignored.
             end
             switch msh.type
                 case "D2T"
@@ -59,7 +63,11 @@ classdef FES
                     % Trace space: "elements" are faces, parameterized by global face vertices.
                     FES.ElParm = reshape(msh.node.coord(:, msh.face.node), msh.dim, msh.face.nNode, msh.nFace);
             end
-            [FES.GlDoFs, FES.Lc2Gl] = asmDoF(msh, fE.DoFs);
+            if ~isempty(options.EntIdx)
+                assert(ismember(FES.elem, ["D2LR", "D3FR"]));
+                assert(all(options.EntIdx >= 1 & options.EntIdx <= msh.nEnt(msh.dim - 1) & mod(options.EntIdx, 1) == 0));
+            end
+            [FES.GlDoFs, FES.Lc2Gl] = asmDoF(msh, fE.DoFs, options.EntIdx);
             if ~isempty(bC)
                 FES.BC = bC.setDoF(FES.GlDoFs);
             else
@@ -195,8 +203,9 @@ classdef FES
     end
 end
 %% Local functions.
-function [GlDoFs, Lc2Gl] = asmDoF(msh, LcDoFs)
+function [GlDoFs, Lc2Gl] = asmDoF(msh, LcDoFs, EntSel)
     % asmDoF: assemble local DoFs to global DoFs.
+    % EntSel: selected facets of trace space (empty: all); global DoFs only on them, `Lc2Gl` is zero on the others.
     assert(ismember(msh.type, ["D2T", "D3T"]));
     GlDoFs = LcDoFs;
     if ismember(LcDoFs.getDomn, ["D2", "D3"])
@@ -238,8 +247,14 @@ function [GlDoFs, Lc2Gl] = asmDoF(msh, LcDoFs)
                 end
             case {"D2R1", "D3R2"}
                 assert(isequal(LcDoF.EntDim, msh.dim - 1));
-                GlDoF.EntIdx = 1:msh.nEnt(msh.dim - 1);
-                El_iEnt = 1:msh.nEnt(msh.dim - 1);
+                if isempty(EntSel)
+                    GlDoF.EntIdx = 1:msh.nEnt(msh.dim - 1);
+                else
+                    GlDoF.EntIdx = unique(EntSel);
+                end
+                % Index of facet in `GlDoF.EntIdx` (0 if not selected).
+                El_iEnt = zeros(1, msh.nEnt(msh.dim - 1));
+                El_iEnt(GlDoF.EntIdx) = 1:GlDoF.nEnt;
         end
         GlDoFs(iDoF) = GlDoF;
         if ismember(LcDoF.domn, ["D2", "D3"]) && LcDoF.EntDim == 1
@@ -255,6 +270,12 @@ function [GlDoFs, Lc2Gl] = asmDoF(msh, LcDoFs)
                 GlSamp = reshape(permTab(iSamp, code(:)), size(code));
                 GlSgn = reshape(sgnTab(iSamp, code(:)), size(code));
                 Lc2Gl(LcDoFs.sub2ind(iDoF, 1:LcDoF.nEnt, iSamp), :) = GlDoFs.sub2ind(iDoF, El_iEnt, GlSamp) .* GlSgn .* (sgn * LcDoF.orien + 1 * (1 - LcDoF.orien));
+            end
+        elseif ismember(LcDoF.domn, ["D2R1", "D3R2"])
+            % Trace space: columns of facets not selected stay zero.
+            isSel = El_iEnt > 0;
+            for iSamp = 1:LcDoF.nSamp
+                Lc2Gl(LcDoFs.sub2ind(iDoF, 1:LcDoF.nEnt, iSamp), isSel) = GlDoFs.sub2ind(iDoF, El_iEnt(isSel), iSamp);
             end
         else
             for iSamp = 1:LcDoF.nSamp

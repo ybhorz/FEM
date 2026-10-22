@@ -1,7 +1,8 @@
 function sys = brinkmanSDG3D(nSub, v)
     % brinkmanSDG3D: system of the hybridized 3D Brinkman SDG scheme (same as FEM_Example/Brinkman_SDG_3D, alpha = 10)
     % on mshSplit(mshD3TS(unit cube, nSub)) with viscosity v. Unknowns (FE spaces `trls`): velocity gradient s
-    % (discontinuous), velocity u, tangential multiplier on dual faces, multiplier on interior primal faces, pressure p.
+    % (discontinuous), velocity u, tangential multiplier on dual faces, multiplier on interior primal faces (trace spaces
+    % with DoFs only on these faces, option "EntIdx" of FES), pressure p.
     % sys: msh, trls, Stiff, Load, and exact solutions s, u, p.
     a = 10;
     d0_p = [0; 0; 0]; grad_p = cat(3, [1; 0; 0], [0; 1; 0], [0; 0; 1]);
@@ -21,10 +22,9 @@ function sys = brinkmanSDG3D(nSub, v)
     PrFace = find(ismember(msh.face.type, 0:6));
     PrOFace = find(ismember(msh.face.type, 0));
     DlFace = find(ismember(msh.face.type, 1i));
-    BdFace = msh.bdEnt(2, 1:6);
     trls = [FES(msh, stdFE("DG1M")), FES(msh, stdFE("SDG1V")), ...
-        FES(msh, stdFE("TP1V2"), BC(Fcn("D3", "0"), "face", PrFace)), ...
-        FES(msh, stdFE("TP1V3"), BC(Fcn("D3", "0"), "face", [DlFace, BdFace])), ...
+        FES(msh, stdFE("TP1V2"), BC.empty, "EntIdx", DlFace), ...
+        FES(msh, stdFE("TP1V3"), BC.empty, "EntIdx", PrOFace), ...
         FES(msh, stdFE("SDG1S"), BC(p, "DoF", 1))];
     is = 1; iu = 2; ig = 3; il = 4; ip = 5; it = 1; iv = 2; ih = 3; im = 4; iq = 5;
     d0_t = d0_s; div_t = div_s; d0_v = d0_u; div_v = div_u; d0_h = d0_g; d0_m = d0_l; d0_q = d0_p; grad_q = grad_p;

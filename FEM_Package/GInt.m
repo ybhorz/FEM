@@ -2,7 +2,7 @@ classdef GInt
     % GInt: Gauss integration.
     properties
         domn {mustBeMember(domn, ["VOID", "D2T", "D2L", "D3T", "D3F", "D3L"])} = "VOID"; % Domain of integration.
-        ord {mustBeMember(ord, [0, 1, 2, 3, 4, 5, 6, 7])}; % Order of integration.
+        ord {mustBeMember(ord, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])}; % Order of integration.
         % - algebraic precision: the rule integrates polynomials up to this degree exactly.
         pnt (:, :); % Coordinates of Gauss points in reference domain (by column).
         wgt (1, :); % Weights of Gauss points in reference domain.
@@ -17,7 +17,7 @@ classdef GInt
         function GInt = GInt(domn, ord)
             arguments
                 domn {mustBeMember(domn, ["D2T", "D2L", "D3T", "D3F", "D3L"])};
-                ord {mustBeMember(ord, [0, 1, 2, 3, 4, 5, 6, 7])};
+                ord {mustBeMember(ord, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])};
             end
             GInt.domn = domn;
             GInt.ord = ord;
@@ -42,6 +42,25 @@ classdef GInt
                                         0.4459484909, 0.1081030182, 0.4459484909, 0.0915762135, 0.8168475729, 0.0915762135];
                             GInt.wgt = [0.1116907948390055, 0.1116907948390055, 0.1116907948390055, ...
                                         0.054975871827661, 0.054975871827661, 0.054975871827661];
+                        case 5
+                            % 7-point symmetric rule, algebraic precision 5.
+                            a1 = (6 - sqrt(15)) / 21;
+                            a2 = (6 + sqrt(15)) / 21;
+                            GInt.pnt = [[1/3; 1/3], orb3(a1), orb3(a2)];
+                            GInt.wgt = [9/80, repmat((155 - sqrt(15)) / 2400, 1, 3), repmat((155 + sqrt(15)) / 2400, 1, 3)];
+                        case 6
+                            % 12-point symmetric rule (Dunavant), algebraic precision 6.
+                            GInt.pnt = [orb3(0.249286745170910421136), orb3(0.063089014491502228340), ...
+                                        orb6(0.053145049844816947353, 0.310352451033784405416)];
+                            GInt.wgt = [repmat(0.058393137863189683015, 1, 3), repmat(0.0254224531851034084605, 1, 3), ...
+                                        repmat(0.041425537809186787597, 1, 6)];
+                        case {7, 8}
+                            % 16-point symmetric rule (Dunavant), algebraic precision 8.
+                            GInt.pnt = [[1/3; 1/3], orb3(0.45929258829261743), orb3(0.17056930775163887), ...
+                                        orb3(0.050547228317034988), orb6(0.0083947774097956878, 0.26311282963499899)];
+                            GInt.wgt = [0.072157803838815607, repmat(0.047545817133693727, 1, 3), ...
+                                        repmat(0.051608685267370995, 1, 3), repmat(0.016229248811606246, 1, 3), ...
+                                        repmat(0.013615157087195261, 1, 6)];
                         otherwise
                             error("Not supported integration order.");
                     end
@@ -69,6 +88,13 @@ classdef GInt
                             b = sqrt((3 - 2 * sqrt(6/5)) / 7);
                             GInt.pnt = [(1 - a) / 2, (1 - b) / 2, (1 + b) / 2, (1 + a) / 2];
                             GInt.wgt = [(18 - sqrt(30)) / 72, (18 + sqrt(30)) / 72, (18 + sqrt(30)) / 72, (18 - sqrt(30)) / 72];
+                        case {8, 9}
+                            % 5-point Gauss-Legendre rule.
+                            a = sqrt(5 + 2 * sqrt(10/7)) / 3;
+                            b = sqrt(5 - 2 * sqrt(10/7)) / 3;
+                            GInt.pnt = [(1 - a) / 2, (1 - b) / 2, 1/2, (1 + b) / 2, (1 + a) / 2];
+                            GInt.wgt = [(322 - 13 * sqrt(70)) / 1800, (322 + 13 * sqrt(70)) / 1800, 64/225, ...
+                                        (322 + 13 * sqrt(70)) / 1800, (322 - 13 * sqrt(70)) / 1800];
                         otherwise
                             error("Not supported integration order.");
                     end
@@ -190,6 +216,18 @@ function Jac = jacVec(B)
                 Jac = sqrt(G(1, 1, :) .* G(2, 2, :) - G(1, 2, :) .* G(2, 1, :));
         end
     end
+end
+function pnt = orb3(a)
+    % orb3: 3-point symmetry orbit of barycentric coordinates (1 - 2a, a, a) on reference triangle (by column);
+    % barycentric (l1, l2, l3) of vertices (0, 0), (1, 0), (0, 1) is the point (l2, l3).
+    pnt = [a, 1 - 2 * a, a;
+           a, a, 1 - 2 * a];
+end
+function pnt = orb6(l1, l2)
+    % orb6: 6-point symmetry orbit of barycentric coordinates (l1, l2, l3), l3 = 1 - l1 - l2 (by column).
+    l3 = 1 - l1 - l2;
+    pnt = [l2, l3, l1, l3, l1, l2;
+           l3, l2, l3, l1, l2, l1];
 end
 function [pnt, wgt] = gaussLeg(n)
     % gaussLeg: n-point Gauss-Legendre rule on [0, 1] by Golub-Welsch algorithm (by row).

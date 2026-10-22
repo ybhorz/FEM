@@ -4,11 +4,12 @@ classdef GIntTest < matlab.unittest.TestCase
     % Algebraic precision of each rule:
     % domn | ord           | precision
     % ---- | ------------- | ---------
-    % D2T  | 0, 1, 2, 3, 4 | 1, 1, 2, 3, 4
-    % D2L  | 0, 1, ..., 7  | 1, 1, 3, 3, 5, 5, 7, 7
+    % D2T  | 0, 1, ..., 8  | 1, 1, 2, 3, 4, 5, 6, 8, 8
+    % D2L  | 0, 1, ..., 9  | 1, 1, 3, 3, 5, 5, 7, 7, 9, 9
     % D3T  | 0, 1, ..., 7  | 1, 1, 2, 3, 5, 5, 7, 7
     % D3F  | same as D2T
     % D3L  | same as D2L
+    % Other orders (D2T 9, D3T 8 and 9) are not supported.
 
     properties
         P2T = [0.1, 1.3, 0.4; -0.2, 0.3, 1.1]; % Vertices of a counter-clockwise triangle (by column).
@@ -19,10 +20,13 @@ classdef GIntTest < matlab.unittest.TestCase
     methods (Test, TestTags = {'Fast'})
         function D2TRef(tc)
             % Monomial l^a m^b on reference triangle: a! b! / (a + b + 2)!.
-            for ord = 0:4
+            precs = [1, 1, 2, 3, 4, 5, 6, 8, 8];
+            for ord = 0:8
                 gInt = GInt("D2T", ord);
                 tc.verifyEqual(sum(gInt.wgt), 1/2, "AbsTol", 1e-10);
-                prec = max(ord, 1);
+                % Gauss points are inside the triangle.
+                tc.verifyTrue(all(gInt.pnt > 0, "all") && all(sum(gInt.pnt, 1) < 1));
+                prec = precs(ord + 1);
                 for deg = 0:prec + 1
                     err = zeros(1, deg + 1);
                     for a = 0:deg
@@ -33,15 +37,16 @@ classdef GIntTest < matlab.unittest.TestCase
                     if deg <= prec
                         tc.verifyLessThan(max(err), 1e-10, sprintf("GInt(D2T, %d) is not exact for degree %d.", ord, deg));
                     else
-                        tc.verifyGreaterThan(max(err), 1e-6, sprintf("GInt(D2T, %d) is exact for degree %d.", ord, deg));
+                        tc.verifyGreaterThan(max(err), 1e-8, sprintf("GInt(D2T, %d) is exact for degree %d.", ord, deg));
                     end
                 end
             end
         end
         function D2TOrg(tc)
             % Compare with symbolic integration on original triangle.
-            funs = ["x + 1", "x^2 + x*y + 1", "x^3 + x^2*y + y + 1", "x^4 + x*y^3 + x^2 + 1"];
-            for ord = 1:4
+            funs = ["x + 1", "x^2 + x*y + 1", "x^3 + x^2*y + y + 1", "x^4 + x*y^3 + x^2 + 1", "x^5 + x^2*y^3 + y", ...
+                "x^6 + x*y^5 + x^3*y", "x^7 + x^4*y^3 + y^2", "x^8 + x^3*y^5 + x*y^6 + 1"];
+            for ord = 1:8
                 fcn = Fcn("D2", funs(ord));
                 intVal = fcn.int("D2T").getFun;
                 tc.verifyEqual(GInt("D2T", ord).eval(fcn.getFun, tc.P2T), intVal([0; 0], tc.P2T), "AbsTol", 1e-10);
@@ -113,6 +118,23 @@ classdef GIntTest < matlab.unittest.TestCase
             tc.verifyEqual(GInt("D3L", 1).eval(@(p) p(1, :), P), 1.5, "AbsTol", 1e-13);
             tc.verifyEqual(GInt("D3L", 3).eval(@(p) p(1, :).^2 + p(2, :) .* p(3, :), P), 3 * (1/3 + 4/3), "AbsTol", 1e-13);
         end
+        function highOrder3D(tc)
+            % D3F and D3L share the rules of D2T and D2L: in plane z = 0 they agree.
+            P2 = [0.1, 1.3, 0.4; -0.2, 0.3, 1.1];
+            fun = @(p) p(1, :).^6 .* p(2, :).^2 + p(2, :).^7 + 1;
+            for ord = 5:8
+                tc.verifyEqual(GInt("D3F", ord).eval(fun, [P2; 0, 0, 0]), GInt("D2T", ord).eval(fun, P2), "AbsTol", 1e-13);
+            end
+            tc.verifyEqual(GInt("D3L", 9).eval(@(p) p(1, :).^9, [0, 1; 0, 0; 0, 0]), 1/10, "AbsTol", 1e-14);
+        end
+        function unsupported(tc)
+            % Orders without a rule.
+            tc.verifyError(@() GInt("D2T", 9), ?MException);
+            tc.verifyError(@() GInt("D3F", 9), ?MException);
+            tc.verifyError(@() GInt("D3T", 8), ?MException);
+            tc.verifyError(@() GInt("D3T", 9), ?MException);
+            tc.verifyError(@() GInt("D2L", 10), ?MException);
+        end
         function evalVec(tc)
             % Batch integration agrees with integration on each domain.
             rng(3);
@@ -143,7 +165,7 @@ classdef GIntTest < matlab.unittest.TestCase
         end
         function D2LRef(tc)
             % Monomial s^k on reference line: 1 / (k + 1).
-            for ord = 0:7
+            for ord = 0:9
                 gInt = GInt("D2L", ord);
                 tc.verifyEqual(sum(gInt.wgt), 1, "AbsTol", 1e-14);
                 prec = max(ord + mod(ord + 1, 2), 1);
@@ -159,8 +181,8 @@ classdef GIntTest < matlab.unittest.TestCase
         end
         function D2LOrg(tc)
             % Compare with symbolic integration on original line.
-            funs = ["x + y + 1", "x^3 + x*y^2 + 1", "x^5 + y^4 + x", "x^7 + x^3*y^3 + 1"];
-            ords = [1, 3, 5, 7];
+            funs = ["x + y + 1", "x^3 + x*y^2 + 1", "x^5 + y^4 + x", "x^7 + x^3*y^3 + 1", "x^9 + x^4*y^5 + y"];
+            ords = [1, 3, 5, 7, 9];
             for iFun = 1:length(funs)
                 fcn = Fcn("D2", funs(iFun));
                 intVal = fcn.int("D2L").getFun;

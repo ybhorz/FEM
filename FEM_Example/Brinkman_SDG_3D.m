@@ -28,7 +28,6 @@ msh = mshSplit(mshD3TS([0, 1, 0, 1, 0, 1], 4));
 PrFace = find(ismember(msh.face.type, 0:6));
 PrOFace = find(ismember(msh.face.type, 0));
 DlFace = find(ismember(msh.face.type, 1i));
-BdFace = msh.bdEnt(2, 1:6);
 D3TElem = MshEnt("D3T").msh;
 FcBar = [Fcn("D3R2", "1 - s - t"), Fcn("D3R2", "s"), Fcn("D3R2", "t")];
 %%
@@ -63,13 +62,13 @@ for iComp = 1:9
 end
 DG_1M_FE = FE("D3T", FE.repFS("[1,x,y,z]", [3, 3]), DG_1M_DoFs, "map", "affine");
 DG_1M_FES = FES(msh, DG_1M_FE);
-%[text] Multipliers (trace spaces on all faces; faces where a multiplier is not used are set to zero)
+%[text] Multipliers (trace spaces with DoFs only on the faces where they are used, option `"EntIdx"` of `FES`)
 %[text] - Tangential velocity $T \\gamma\_h$ on dual faces: $\\gamma\_h$ with 2 components, linear, each component at face vertices
-%[text] - Velocity $\\lambda\_h$ on interior primal faces: 3 components, linear, each component at face vertices ($\\lambda\_h = 0$ on $\\partial \\Omega$ imposes $\\mathbf{u} = 0$) \
+%[text] - Velocity $\\lambda\_h$ on interior primal faces: 3 components, linear, each component at face vertices (no $\\lambda\_h$ on $\\partial \\Omega$, i.e. $\\lambda\_h = 0$ imposes $\\mathbf{u} = 0$) \
 TP_1_DoFs = @(nComp) arrayfun(@(iComp) NdDoF("D3R2", MshEnt("D3FR").msh, 2, [0, 1, 0; 0, 0, 1], zeros(2, nComp), ...
     "coef", Fcn.cst(double(1:nComp == iComp)'), "share", false), 1:nComp);
-TP_1V2_FES = FES(msh, FE("D3FR", FE.repFS("[1,s,t]", [2, 1]), TP_1_DoFs(2)), BC(Fcn("D3", "0"), "face", PrFace));
-TP_1V3_FES = FES(msh, FE("D3FR", FE.repFS("[1,s,t]", [3, 1]), TP_1_DoFs(3)), BC(Fcn("D3", "0"), "face", [DlFace, BdFace]));
+TP_1V2_FES = FES(msh, FE("D3FR", FE.repFS("[1,s,t]", [2, 1]), TP_1_DoFs(2)), BC.empty, "EntIdx", DlFace);
+TP_1V3_FES = FES(msh, FE("D3FR", FE.repFS("[1,s,t]", [3, 1]), TP_1_DoFs(3)), BC.empty, "EntIdx", PrOFace);
 %%
 %[text] Hybridized SDG scheme (Zhao, Chung and Lam, CMAME 364, 2020): $\\sigma\_h$ is discontinuous; $\[\\sigma\_h \\mathbf{n}\] = 0$ on interior primal faces and $\[\\sigma\_h \\mathbf{n}\] \\times \\mathbf{n} = 0$ on dual faces are imposed weakly by $\\lambda\_h$ and $\\gamma\_h$. Find $\\sigma\_h \\in \\Sigma\_h$, $\\mathbf{u}\_h \\in U\_h$, $\\gamma\_h$, $\\lambda\_h$, and $p\_h \\in P\_h$ such that
 %[text] $\\begin{cases}\n  \\sum\_{K} \\int\_K \\sigma\_h : \\tau\_h \\, dx + \\sum\_{K} \\int\_K \\mathbf{u}\_h \\cdot \\nabla \\cdot \\tau\_h \\, dx - \\sum\_{F \\in F\_h^{dl}} \\int\_F ((\\mathbf{u}\_h \\cdot \\mathbf{n}) \\mathbf{n} + T \\gamma\_h) \\cdot \[\\tau\_h \\mathbf{n}\] \\, ds - \\sum\_{F \\in F\_h^{pr, o}} \\int\_F \\lambda\_h \\cdot \[\\tau\_h \\mathbf{n}\] \\, ds = 0 &\\forall \\tau\_h \\in \\Sigma\_h \\\\\n  \\alpha \\sum\_{K} \\int\_K \\mathbf{u}\_h \\cdot \\mathbf{v}\_h \\, dx - \\nu \\sum\_{K} \\int\_K \\nabla \\cdot \\sigma\_h \\cdot \\mathbf{v}\_h \\, dx + \\nu \\sum\_{F \\in F\_h^{dl}} \\int\_F \[\\sigma\_h \\mathbf{n}\] \\cdot \\mathbf{n} \\, \\mathbf{v}\_h \\cdot \\mathbf{n} \\, ds - \\sum\_{K} \\int\_K p\_h \\nabla \\cdot \\mathbf{v}\_h \\, dx + \\sum\_{F \\in F\_h^{pr}} \\int\_F p\_h \[\\mathbf{v}\_h \\cdot \\mathbf{n}\] \\, ds = \\sum\_{K} \\int\_K \\mathbf{f} \\cdot \\mathbf{v}\_h \\, dx &\\forall \\mathbf{v}\_h \\in U\_h \\\\\n  \\nu \\sum\_{F \\in F\_h^{dl}} \\int\_F \[\\sigma\_h \\mathbf{n}\] \\cdot T \\eta\_h \\, ds = 0, \\quad \\nu \\sum\_{F \\in F\_h^{pr, o}} \\int\_F \[\\sigma\_h \\mathbf{n}\] \\cdot \\mu\_h \\, ds = 0 &\\forall \\eta\_h, \\mu\_h \\\\\n  - \\sum\_{K} \\int\_K \\mathbf{u}\_h \\cdot \\nabla q\_h \\, dx + \\sum\_{F \\in F\_h^{dl}} \\int\_F \\mathbf{u}\_h \\cdot \\mathbf{n} \[ q\_h \] \\, ds = 0 &\\forall q\_h \\in P\_h\n\\end{cases}$

@@ -55,7 +55,9 @@ function DoFGrp = grpDoF(msh, FESs, iCond, nDoF)
             otherwise
                 error("Unsupported FE space.");
         end
-        isVal = El > 0 & ~isBd(Dof);
+        % Skip boundary DoFs and zero entries of `Lc2Gl` (facets not selected in a trace space).
+        isVal = El > 0 & Dof > 0;
+        isVal(isVal) = ~isBd(Dof(isVal));
         DoFIdx = [DoFIdx; FESs.cumDoF(iFES - 1) + Dof(isVal)];
         ElIdx = [ElIdx; El(isVal)];
     end

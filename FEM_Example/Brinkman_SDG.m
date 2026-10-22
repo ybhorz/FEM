@@ -22,7 +22,6 @@ msh = mshSplit(mshD2TS([0, 1, 0, 1], 16));
 PrEdge = find(ismember(msh.edge.type, [0, 1, 2, 3, 4]));
 PrOEdge = find(ismember(msh.edge.type, 0));
 DlEdge = find(ismember(msh.edge.type, 1i));
-BdEdge = find(ismember(msh.edge.type, [1, 2, 3, 4]));
 %%
 %[text] Scalar $SDG\_1$ element
 %[text] - Element: triangle
@@ -62,13 +61,13 @@ DG_1M_FES = FES(msh, DG_1M_FE);
 %[text] - Element: edge
 %[text] - Function space: $P\_1$ (tangential velocity $\\gamma\_h t$ on dual edges), $P^2\_1$ (velocity $\\lambda\_h$ on interior primal edges)
 %[text] - Nodal DoF: (each component) at edge vertex
-%[text] - Edges where a multiplier is not used are set to zero ($\\lambda\_h = 0$ on $\\partial \\Omega$ imposes $u = 0$) \
+%[text] - DoFs only on the edges where a multiplier is used (option `"EntIdx"` of `FES`); there is no $\\lambda\_h$ on $\\partial \\Omega$, i.e. $\\lambda\_h = 0$ imposes $u = 0$ \
 TP_1S_FE = FE("D2LR", "[1,s]", NdDoF("D2R1", MshEnt("D2LR").msh, 1, [0, 1], d0_g, "share", false));
-TP_1S_FES = FES(msh, TP_1S_FE, BC(Fcn("D2", "0"), "edge", PrEdge));
+TP_1S_FES = FES(msh, TP_1S_FE, BC.empty, "EntIdx", DlEdge);
 TP_1V_FE = FE("D2LR", FE.repFS("[1,s]", [2, 1]), ...
     [NdDoF("D2R1", MshEnt("D2LR").msh, 1, [0, 1], d0_l, "coef", Fcn.cst([1; 0]), "share", false), ...
     NdDoF("D2R1", MshEnt("D2LR").msh, 1, [0, 1], d0_l, "coef", Fcn.cst([0; 1]), "share", false)]);
-TP_1V_FES = FES(msh, TP_1V_FE, BC(Fcn("D2", "0"), "edge", [DlEdge, BdEdge]));
+TP_1V_FES = FES(msh, TP_1V_FE, BC.empty, "EntIdx", PrOEdge);
 %%
 %[text] Hybridized SDG scheme (Zhao, Chung and Lam, CMAME 364, 2020): $\\sigma\_h$ is discontinuous; $\[\\sigma\_h n\] = 0$ on interior primal edges and $\[\\sigma\_h n \\cdot t\] = 0$ on dual edges are imposed weakly by $\\lambda\_h$ and $\\gamma\_h$. Find $\\sigma\_h \\in \\Sigma\_h$, $u\_h \\in U\_h$, $\\gamma\_h$, $\\lambda\_h$, and $p\_h \\in P\_h$ such that
 %[text] $\\begin{cases}\n  \\sum\_{K \\in T\_h} \\int\_K \\sigma\_h \\tau\_h \\, dx \\, dy + \\sum\_{K \\in T\_h} \\int\_K u\_h \\nabla \\cdot \\tau\_h \\, dx \\, dy - \\sum\_{e \\in F\_h^{dl}} \\int\_e (u\_h \\cdot n \[ \\tau\_h n \\cdot n \] + \\gamma\_h \[ \\tau\_h n \\cdot t \]) \\, ds - \\sum\_{e \\in F\_h^{pr, o}} \\int\_e \\lambda\_h \[ \\tau\_h n \] \\, ds = 0 &\\forall \\tau\_h \\in \\Sigma\_h \\\\\n  \\alpha \\sum\_{K \\in T\_h} \\int\_K u\_h v\_h \\, dx \\, dy - \\nu \\sum\_{K \\in T\_h} \\int\_K \\nabla \\cdot \\sigma\_h v\_h \\, dx \\, dy + \\nu \\sum\_{e \\in F\_h^{dl}} \\int\_e \[ \\sigma\_h n \\cdot n \] v\_h \\cdot n \\, ds - \\sum\_{K \\in T\_h} \\int\_K p\_h \\nabla \\cdot v\_h \\, dx \\, dy + \\sum\_{e \\in F\_h^{pr}} \\int\_e p\_h \[ v\_h \\cdot n \] \\, ds = \\sum\_{K \\in T\_h} \\int\_K f v\_h \\, dx \\, dy &\\forall v\_h \\in U\_h \\\\\n  \\nu \\sum\_{e \\in F\_h^{dl}} \\int\_e \[ \\sigma\_h n \\cdot t \] \\eta\_h \\, ds = 0, \\quad \\nu \\sum\_{e \\in F\_h^{pr, o}} \\int\_e \[ \\sigma\_h n \] \\mu\_h \\, ds = 0 &\\forall \\eta\_h, \\mu\_h \\\\\n  - \\sum\_{K \\in T\_h} \\int\_K u\_h \\nabla q\_h \\, dx \\, dy + \\sum\_{e \\in F\_h^{dl}} \\int\_e u\_h \\cdot n \[ q\_h \] \\, ds = 0 &\\forall q\_h \\in P\_h\n\\end{cases}$

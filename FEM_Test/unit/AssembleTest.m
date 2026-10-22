@@ -303,9 +303,76 @@ classdef AssembleTest < matlab.unittest.TestCase
             % Shared (continuous) DoFs cannot be eliminated element by element.
             tc.verifyError(@() condSolve(Stiff, Load, [tc.P1_FES, trls(2:3)], 1), "MATLAB:assertion:failed");
         end
+        function traceEntIdx(tc)
+            % Trace space with DoFs only on some edges (FES option EntIdx): forms restricted to these edges give the
+            % corresponding blocks of the forms in the trace space on all edges; forms on other edges are not allowed.
+            msh = tc.msh;
+            d0 = [0; 0];
+            fE = FE("D2LR", "[1,s]", NdDoF("D2R1", MshEnt("D2LR").msh, 1, [0, 1], 0, "share", false));
+            EgSel = tc.BdEdge(1:2:end);
+            TPSel = FES(msh, fE, BC.empty, "EntIdx", EgSel);
+            TPAll = FES(msh, fE);
+            % Element space and multiplier on selected boundary edges (both sides of edges: the element may be on
+            % either side): (u, v) + <lambda, v> + <u, mu> - <lambda, mu> = (f, v) + <g, mu>.
+            Auv = [DLF(msh, 2, Fcn.cst(1), d0, d0, "iTrl", 1, "iTst", 1, "GInt", GInt("D2T", 2)), ...
+                DLF(msh, 1, Fcn.cst(1), 0, d0, "iTrl", 2, "iTst", 1, "EntIdx", EgSel, "GInt", GInt("D2L", 2)), ...
+                DLF(msh, 1, Fcn.cst(1), 0, d0, "iTrl", 2, "iTst", -1, "EntIdx", EgSel, "GInt", GInt("D2L", 2)), ...
+                DLF(msh, 1, Fcn.cst(1), d0, 0, "iTrl", 1, "iTst", 2, "EntIdx", EgSel, "GInt", GInt("D2L", 2)), ...
+                DLF(msh, 1, Fcn.cst(1), d0, 0, "iTrl", -1, "iTst", 2, "EntIdx", EgSel, "GInt", GInt("D2L", 2)), ...
+                DLF(msh, 1, Fcn("D2", "-1 - x"), 0, 0, "iTrl", 2, "iTst", 2, "EntIdx", EgSel, "GInt", GInt("D2L", 3))];
+            Fv = [SLF(msh, 2, Fcn("D2", "x*y + 1"), d0, "iTst", 1, "GInt", GInt("D2T", 3)), ...
+                SLF(msh, 1, Fcn("D2", "x^2 - y"), 0, "iTst", 2, "EntIdx", EgSel, "GInt", GInt("D2L", 3))];
+            [StiffSel, LoadSel] = assemble(msh, [tc.DG1_FES, TPSel], [tc.DG1_FES, TPSel], Auv, Fv);
+            [StiffAll, LoadAll] = assemble(msh, [tc.DG1_FES, TPAll], [tc.DG1_FES, TPAll], Auv, Fv);
+            nDG = tc.DG1_FES.nGlDoF;
+            tc.verifyEqual(size(StiffSel, 1), nDG + 2 * length(EgSel));
+            % DoF of TPSel -> DoF of TPAll.
+            L2GSel = TPSel.Lc2Gl(:, EgSel);
+            L2GAll = TPAll.Lc2Gl(:, EgSel);
+            perm = zeros(TPSel.nGlDoF, 1);
+            perm(L2GSel(:)) = L2GAll(:);
+            idx = [1:nDG, nDG + perm'];
+            tc.verifyEqual(full(StiffSel), full(StiffAll(idx, idx)), "AbsTol", 1e-13);
+            tc.verifyEqual(LoadSel, LoadAll(idx), "AbsTol", 1e-13);
+            % Forms on edges without DoFs.
+            tc.verifyError(@() assemble(msh, [tc.DG1_FES, TPSel], [tc.DG1_FES, TPSel], ...
+                DLF(msh, 1, Fcn.cst(1), 0, 0, "iTrl", 2, "iTst", 2, "GInt", GInt("D2L", 2)), SLF.empty), "MATLAB:assertion:failed");
+            tc.verifyError(@() assemble(msh, [tc.DG1_FES, TPSel], [tc.DG1_FES, TPSel], DLF.empty, ...
+                SLF(msh, 1, Fcn.cst(1), 0, "iTst", 2, "GInt", GInt("D2L", 2))), "MATLAB:assertion:failed");
+            tc.verifyError(@() assemble(msh, [tc.DG1_FES, TPSel], [tc.DG1_FES, TPSel], ...
+                DLF(msh, 1, Fcn.cst(1), 0, 0, "iTrl", 2, "iTst", 2, "EntIdx", tc.BdEdge, "GInt", GInt("D2L", 2)), SLF.empty), ...
+                "MATLAB:assertion:failed");
+            % Static condensation: element space alone, or together with the multiplier (each selected boundary edge
+            % belongs to one element); same as the direct solution.
+            trls = [tc.DG1_FES, TPSel];
+            ref = StiffSel \ LoadSel;
+            tc.verifyEqual(condSolve(StiffSel, LoadSel, trls, 1), ref, "AbsTol", 1e-12);
+            tc.verifyEqual(condSolve(StiffSel, LoadSel, trls, [1, 2]), ref, "AbsTol", 1e-12);
+            % Error norm on selected edges.
+            u = Fcn("D2", "x - 2*y");
+            tc.verifyEqual(eNorm(msh, u, TPSel.proj(u), Norm(msh, 1, 0, "EntIdx", EgSel, "GInt", GInt("D2L", 2))), 0, "AbsTol", 1e-13);
+        end
+        function brinkmanEntIdx2D(tc)
+            % Hybridized 2D Brinkman SDG: multipliers with DoFs only on their edges (FES option EntIdx) give the same
+            % solution as multipliers on all edges set to zero on the other edges, with fewer DoFs.
+            sysSel = brinkmanSDG2D(2, true);
+            sysAll = brinkmanSDG2D(2, false);
+            msh = sysSel.msh;
+            tc.verifyEqual(size(sysAll.Stiff, 1) - size(sysSel.Stiff, 1), ...
+                2 * (msh.nEdge - length(sysSel.DlEdge)) + 4 * (msh.nEdge - length(sysSel.PrOEdge)));
+            solSel = condSolve(sysSel.Stiff, sysSel.Load, sysSel.trls, {1, [2, 3]});
+            solAll = condSolve(sysAll.Stiff, sysAll.Load, sysAll.trls, {1, [2, 3]});
+            tc.verifyEqual(solSel, sysSel.Stiff \ sysSel.Load, "AbsTol", 1e-9);
+            fEFSel = cell(1, 5); fEFAll = cell(1, 5);
+            [fEFSel{:}] = FEF.multi(sysSel.trls, solSel);
+            [fEFAll{:}] = FEF.multi(sysAll.trls, solAll);
+            for iFES = 1:5
+                tc.verifyEqual(fEFSel{iFES}.ElCoef, fEFAll{iFES}.ElCoef, "AbsTol", 1e-9, sprintf("FE space %d", iFES));
+            end
+        end
         function condSolveBrinkman3D(tc)
             % Hybridized Brinkman SDG: velocity gradient eliminated by element, then velocity and tangential multiplier
-            % (trace space, boundary DoFs not eliminated) by macro element; one or two levels give the full solution.
+            % (trace space with DoFs only on dual faces) by macro element; one or two levels give the full solution.
             sys = brinkmanSDG3D(1, 1);
             ref = sys.Stiff \ sys.Load;
             tc.verifyEqual(condSolve(sys.Stiff, sys.Load, sys.trls, {1, [2, 3]}), ref, "AbsTol", 1e-9);
